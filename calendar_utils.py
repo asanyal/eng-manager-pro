@@ -62,6 +62,7 @@ def format_time(minutes: int) -> str:
         return f"{hours}h {remaining_minutes}min"
 
 def analyze_calendar(sd, ed):
+    print("Analyzing calendar...")
     creds = login()
     service = googleapiclient.discovery.build('calendar', 'v3', credentials=creds)
 
@@ -79,6 +80,7 @@ def analyze_calendar(sd, ed):
         orderBy='startTime').execute()
 
     events = events_result.get('items', [])
+    print(f"{len(events)} events retrieved from Calendar API")
     events_context = []
     if not events:
         print('No upcoming events found.')
@@ -127,6 +129,7 @@ def analyze_calendar(sd, ed):
             event_summary = event['summary'].replace(',', '')
             events_context.append(
                 f"{event_date}, {event_summary}, {organizer}, {st}, {et}, {duration}, {hangout_link}, {meeting_type}, {aliases_string}\n")
+    print(f"{len(events_context)} events processed")
     return events_context
 
 def get_free_time(events):
