@@ -14,7 +14,9 @@ code_red_days_after = 10
 api_router = ApiRouter()
 display_utils = DisplayUtils()
 sprint_utils = SprintUtils(api_router)
-github_api = GithubAPI("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")
+
+github_token = st.secrets["github"]["token"]
+github_api = GithubAPI(github_token)
 
 all_owners = api_router.get_all_owners()
 
