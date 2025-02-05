@@ -7,8 +7,7 @@ def ask_openai(
     system_content="You are a smart assistant", 
     model="gpt-4o-mini"
 ):
-    api_key = st.secrets["OPENAI_API_KEY"]
-    os.environ['OPENAI_API_KEY'] = api_key
+    api_key = st.secrets['openai']["api_key"]
     client = OpenAI(api_key=api_key)
     response = client.chat.completions.create(
         model=model,
