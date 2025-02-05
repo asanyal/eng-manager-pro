@@ -516,12 +516,9 @@ with highlighter:
             Firstly, add a 1 line clear and concise summary/conclusion of the text at the top in an <h4> tag.
             Secondly, restate the text (below) following these instructions:
             1. Write in a telegraphic style - use gerund phrases, make it direct, omit articles where possible to keep it short.
-            2. ONLY highlight the most important phrases that add to the meaning of the text. 
-            3. Don't hightlight too many or too few phrases. Ensure at least 30% of the text is highlighted.
-            4. It should be that if I only read the highlighted text, i would understand the main idea of the text.
-            5. Add a span tag with #FFC0CB background and a BOLD tag to the highlighted phrases. 
-            6. Keep the color of the text black.
-            7. Return the answer in HTML.
+            2. Highlight important keywords and phrases. Add a span tag with #FFC0CB background and a BOLD tag to the highlighted phrases. 
+            3. Keep the color of the text black.
+            4. Return the answer in HTML.
             
             ---Start of text---
             {text}
