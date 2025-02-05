@@ -144,13 +144,12 @@ with my_day:
 
             events_context = analyze_calendar(start_date, end_date)
             events = [parse_event(event) for event in events_context]
+            print(f"{len(events)} events parsed")
             display_html = []
 
             idx = 0
 
             prev_end_time = None
-
-            
 
             skippable_time = 0
             for i, event in enumerate(events):
@@ -188,6 +187,7 @@ with my_day:
                     else:
                         prev_duration = 0
 
+                    print("Adding table row...")
                     display_html.append(f"<tr><td>{current_start_time_str} (<span style='color: #FF69B4;'>{format_time(current_duration)}</span>)</td><td>{description}</td></tr>") 
                     prev_end_time = datetime.strptime(str(event['end_time']), '%H:%M:%S')
                     
@@ -196,12 +196,12 @@ with my_day:
             if idx == 0:
                 display_html.append("<tr><td><span style='color: #00FF00;'>Free! Free! Free!</span></td></tr>")
 
-            
+            print(f"Skippable time: {skippable_time}")
             st.session_state.skippable_time = skippable_time
 
             display_html = ["<table border='1' style='width: 70%;'><tr><th>Event</th><th>Time</th><th>After the event</th></tr>"] + display_html + ["</table>"]
 
-
+            print("Adding table to session state...")
             st.session_state.my_day_events = "".join(display_html)
 
         if leave_home_at_time is not None:
@@ -210,9 +210,12 @@ with my_day:
             st.markdown(f"<tr><td><span style='color: #FF6100;'>Wake up at <b>{wut.strftime('%I.%M %p')}</b></span></td></tr>", unsafe_allow_html=True)
             st.markdown(f"<tr><td><span style='color: #0d7e03;'>Leave home at <b>{lht.strftime('%I.%M %p')}</b></span></td></tr>", unsafe_allow_html=True)
 
-        if st.session_state.my_day_events and st.session_state.skippable_time:
+        if st.session_state.my_day_events:
             st.markdown(st.session_state.my_day_events, unsafe_allow_html=True)
+        if st.session_state.skippable_time:
             st.markdown(f"<span style='color: #FF6100;'>{format_time(st.session_state.skippable_time)} of skippable meetings.</span>", unsafe_allow_html=True)
+        else:
+            st.markdown("<span style='color: #FF6100;'>No skippable meetings today.</span>", unsafe_allow_html=True)
 
 
 if 'feed_strings' not in st.session_state:
