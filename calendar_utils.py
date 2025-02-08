@@ -96,7 +96,7 @@ def analyze_calendar(sd, ed):
             return []
     
     for event in events:
-        if event['summary'] == "Block":
+        if event['summary'] == "Block" or "No Meetings" in event['summary']:
             continue
         if 'dateTime' in event['start']:
             attendee_emails = [

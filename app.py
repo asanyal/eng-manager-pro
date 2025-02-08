@@ -1,6 +1,8 @@
 import streamlit as st
+from llm_utils import CODE_REVIEW_GUIDELINES, CODE_REVIEW_INSTRUCTIONS
 from sprint_utils import DisplayUtils, ApiRouter, SprintUtils
 from email_utils import fetch_emails_in_last_n_hours, base_query
+from llm_utils import ask_openai
 from datetime import datetime, timedelta
 from tqdm import tqdm
 from IPython.display import display, HTML
@@ -9,6 +11,7 @@ from github_utils import GithubAPI
 from calendar_utils import analyze_calendar, parse_event, format_time
 from google_docs import authenticate, list_docs
 import time
+
 code_red_days_after = 10
 
 api_router = ApiRouter()
@@ -73,11 +76,12 @@ if 'user_activity_map' not in st.session_state:
 
 
 tab_names = [
-    "My Day", "Emails","GH Activity", "Objectives", "Person",
-    "Epics", "GH Authors", "GH Repo", "Highlight", "Docs"
+    "My Day", "Emails", "GH Activity", "Smart Reviews", "Objectives",
+    "Person", "Epics", "GH Author Activity", "GH Repo Activity", "Highlight", "Docs",
+    "Competitors"
 ]
 
-my_day, get_emails, activity_feed, explain_an_objective, analyze_a_person, explain_epics, author_prs, repo_prs, highlighter, google_docs = st.tabs(tab_names)
+my_day, get_emails, activity_feed, smart_reviews, explain_an_objective, analyze_a_person, explain_epics, author_prs, repo_prs, highlighter, google_docs, competitors = st.tabs(tab_names)
 
 with get_emails:
     # small textbox to take in Hours
@@ -514,10 +518,10 @@ with highlighter:
         def highlight_keywords(text: str):
             prompt = f"""
             Firstly, add a 1 line clear and concise summary/conclusion of the text at the top in an <h4> tag.
-            Secondly, restate the text (below) following these instructions:
-            1. Write in a telegraphic style - use gerund phrases, make it direct, omit articles where possible to keep it short.
-            2. Highlight important keywords and phrases. Add a span tag with #FFC0CB background and a BOLD tag to the highlighted phrases. 
-            3. Keep the color of the text black.
+            Restate the text (below) following these instructions:
+            1. Write in a telegraphic style - use gerund phrases, make it direct, omit articles to keep it short.
+            2. ONLY highlight important keywords. Add a span tag with #FFC0CB background and a BOLD tag.
+            3. DO NOT highlight articles, verbs, adjectives, etc. 
             4. Return the answer in HTML.
             
             ---Start of text---
@@ -554,3 +558,105 @@ with google_docs:
                 list_docs(service, number_of_docs=10, type="slides", summarize=True)
             else:
                 st.error("Invalid document type")
+
+with competitors:
+    from competitor_utils import get_competitive_analysis
+
+    # draw a textbox to take in company name
+    #  create 2 tabs, one for competitive analysis and one for competitive landscape
+    col1, col2, _, _ = st.columns([1, 1, 1, 1])
+
+    with col1:
+        company_name = st.text_input("Company Name")
+    with col2:
+        st.write(" ")
+        st.write(" ")
+        get_competitors_button = st.button("Get Competitors", type="primary")
+
+    full_width_container = st.container()
+
+    with full_width_container:
+        if get_competitors_button:
+            competitors = get_competitive_analysis(company_name)
+            st.markdown(competitors, unsafe_allow_html=True)
+
+if 'latest_prs' not in st.session_state:
+    st.session_state.latest_prs = []
+
+with smart_reviews:
+
+    pr_review_col, latest_prs_col = st.columns([3, 2])
+
+    with pr_review_col:
+        col1, col2, _, _ = st.columns([2, 1, 1, 1])
+        with col1:
+            pr_url = st.text_input("PR URL")
+        with col2:
+            st.write(" ")
+            st.write(" ")
+            get_pr_diff_button = st.button("Get PR Diff", type="primary")
+
+        full_width_container = st.container()
+
+        with full_width_container:
+            if get_pr_diff_button:
+                pr_diff = github_api.get_pr_diff(pr_url)
+                for patch in pr_diff:
+                    st.write("")
+                    st.write(f"Path: <b><a href='{pr_url}/files'>{patch['path']}</a></b>, Additions: <b>{patch['additions']}</b>, Deletions: <b>{patch['deletions']}</b>", unsafe_allow_html=True)
+                    html_content = "<table style='width: 50%;'><tr><th>Review</th></tr>"
+                    smart_review = ask_openai(
+                        system_content="You are the smartest python programmer in the world.",
+                        user_content=f"""
+                            Below is a patch of code from a Github PR.
+                            + suggests additions.
+                            - suggests deletions.
+                            Provide a short and concise expert review of the following patch of code:
+                            --start of patch--
+                            {patch['patch']}
+                            --end of patch--
+
+                            INSTRUCTIONS:
+                            {CODE_REVIEW_INSTRUCTIONS}
+
+                            CODE REVIEW GUIDELINES:
+                            {CODE_REVIEW_GUIDELINES}
+                    """)
+                    html_content = f"""
+                        <tr>
+                            <td>{smart_review}</td>
+                        </tr>
+                    """
+                    html_content += "</table>"
+                    st.markdown(html_content, unsafe_allow_html=True)
+
+    with latest_prs_col:
+        # button to refresh latest prs
+        st.write(" ")
+        st.write(" ")
+        refresh_latest_prs_button = st.button("Refresh Latest PRs")
+
+        full_width_container = st.container()
+
+        with full_width_container:
+
+            if refresh_latest_prs_button:
+                
+                start = (datetime.now() - timedelta(days=2)).strftime("%d %b %Y")
+                end = datetime.now().strftime("%d %b %Y")
+                st.session_state.latest_prs = []
+                html_content = "<h3>PRs for your review</h3>"
+                for repo in ["api", "runners", "wizard", "galileo-sdk", "ui"]:
+                    html_content += f"<b>{repo.capitalize()} PRs</b>"
+                    prs = github_api.get_prs_for_repo(repo_name=repo, start=start, end=end)
+                    html_content += "<ul>"
+                    for pr in prs[:5]:
+                        created_at = pr['created_at'].strftime("%d %b")
+                        html_content += f"<li>[<b>{created_at}</b>][<b>{pr['author']}</b>] <a href='{pr['url']}'>{pr['url']}</a></li>"
+                    html_content += "</ul>"
+                
+                st.session_state.latest_prs.append(html_content)
+
+        if st.session_state.latest_prs:
+            for pr in st.session_state.latest_prs:
+                st.markdown(pr, unsafe_allow_html=True)

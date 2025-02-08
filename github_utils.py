@@ -109,6 +109,37 @@ class GithubAPI:
 
         return user_activity_html
 
+    def get_pr_diff(self, pr_url: str) -> list[dict]:
+        """
+        Extracts the new patches of code added in a PR with metadata.
+        :param pr_url: The full GitHub PR URL.
+        :return: List of dictionaries containing patch details.
+        """
+        pr_api_url = pr_url.replace("github.com", "api.github.com/repos").replace("/pull/", "/pulls/")
+        diff_url = f"{pr_api_url}/files"
+        
+        response = requests.get(diff_url, headers=self.headers)
+        
+        if response.status_code != 200:
+            raise Exception(f"Failed to fetch PR diff: {response.status_code} {response.text}")
+        
+        patch_data = []
+        
+        for file in response.json():
+            patch = file.get("patch", "")
+            if patch:
+                patch_data.append({
+                    "path": file.get("filename"),
+                    "start_line_number": file.get("patch", "").split("\n")[0] if file.get("patch") else None,
+                    "end_line_number": file.get("patch", "").split("\n")[-1] if file.get("patch") else None,
+                    "patch": patch,
+                    "additions": file.get("additions"),
+                    "deletions": file.get("deletions"),
+                    "changes": file.get("changes"),
+                    "status": file.get("status")
+                })
+        
+        return patch_data
 
     def get_feed(self, last_n_hours: int = 24) -> list[dict]:
         feed_strings = []
@@ -164,29 +195,68 @@ class GithubAPI:
                     author = None
 
                 if event_type == 'PullRequestEvent':
-                    action = event['payload']['action']
                     pr = event['payload']['pull_request']['url'].replace("api.", "").replace("/repos", "").replace("/pulls", "/pull")
-                    feed_strings.append(f"{event_time}{repo_name} <b>{user}</b> {action} <a href='{pr}'>PR</a> on <b>{repo}</b>")
+                    pr_title = self.get_trimmed_pr_title(event['payload']['pull_request']['title'])
+                    feed_strings.append(f"{event_time}{repo_name} <b>{user}</b> created a <a href='{pr}'>PR</a> on <b>{repo}</b> <span style='font-size: 8px;'>({pr_title})</span>")
                 elif event_type == 'PushEvent':
-                    feed_strings.append(f"{event_time}{repo_name} <b>{user}</b> pushed a commit to <b>{repo}</b>")
+                    pr_title = self.get_trimmed_pr_title(event['payload']['commits'][0]['message'])
+                    feed_strings.append(f"{event_time}{repo_name} <b>{user}</b> pushed a commit to <b>{repo}</b> <span style='font-size: 8px;'>({pr_title})</span>")
                 elif event_type == 'IssuesEvent':
-                    feed_strings.append(f"{event_time}{repo_name} <b>{user}</b> {action} an issue on <b>{repo}</b>")
+                    feed_strings.append(f"{event_time}{repo_name} <b>{user}</b> created an issue on <b>{repo}</b>")
                 elif event_type == 'IssueCommentEvent':
                     pr = event['payload']['issue']['url'].replace("api.", "").replace("/repos", "")
+                    pr_title = self.get_trimmed_pr_title(event['payload']['issue']['title'])
                     if author:
-                        feed_strings.append(f"{event_time}{repo_name} <b>{user}</b> commented on <b>{author}'s</b> <a href='{pr}'>PR</a>")
-                    else:
-                        feed_strings.append(f"{event_time}{repo_name} <b>{user}</b> commented on an issue on <b>{repo}</b>")
+                        feed_strings.append(f"{event_time}{repo_name} <b>{user}</b> commented on <b>{author}'s</b> <a href='{pr}'>PR</a> <span style='font-size: 8px;'>({pr_title})</span>")
+                    else:                        
+                        feed_strings.append(f"{event_time}{repo_name} <b>{user}</b> commented on an issue on <b>{repo}</b> <span style='font-size: 8px;'>({pr_title})</span>")
                 elif event_type == 'PullRequestReviewEvent':
                     pr = event['payload']['pull_request']['url'].replace("api.", "").replace("/repos", "").replace("/pulls", "/pull")
+                    pr_title = self.get_trimmed_pr_title(event['payload']['pull_request']['title'])
                     if author:
-                        feed_strings.append(f"{event_time}{repo_name} <b>{user}</b> reviewed <b>{author}'s</b> <a href='{pr}'>PR</a>")
+                        feed_strings.append(f"{event_time}{repo_name} <b>{user}</b> reviewed <b>{author}'s</b> <a href='{pr}'>PR</a> <span style='font-size: 8px;'>({pr_title})</span>")
                     else:
-                        feed_strings.append(f"{event_time}{repo_name} <b>{user}</b> reviewed this <a href='{pr}'>PR</a>")
+                        feed_strings.append(f"{event_time}{repo_name} <b>{user}</b> reviewed this <a href='{pr}'>PR</a> <span style='font-size: 8px;'>({pr_title})</span>")
         feed_progress.progress(100)
         repo_progress_md.markdown("")
         st.markdown(f"{len(feed_strings)} events in the last {last_n_hours} hours")
         return feed_strings, repo_events_count
+
+    
+        """
+        Extracts the new lines of code added in a PR.
+        :param pr_url: The full GitHub PR URL.
+        :return: List of strings, where each string is a new line of code added in the PR.
+        """
+        pr_api_url = pr_url.replace("github.com", "api.github.com/repos").replace("/pull/", "/pulls/")
+        diff_url = f"{pr_api_url}/files"
+        
+        response = requests.get(diff_url, headers=self.headers)
+        
+        if response.status_code != 200:
+            raise Exception(f"Failed to fetch PR diff: {response.status_code} {response.text}")
+        
+        new_lines = []
+        
+        for file in response.json():
+            patch = file.get("patch", "")
+            if patch:
+                for line in patch.split("\n"):
+                    if line.startswith("+") and not line.startswith("+++"):
+                        new_lines.append(line[1:].strip())
+        
+        return new_lines
+
+    def get_trimmed_pr_title(self, title: str) -> str:
+        # ignore all words before the first colon (if that exists)
+        if ":" in title:
+            title = title.split(":")[1].strip()
+        # from the remainder, pick the first 2 words and add an ellipsis
+        # if the title is less than 3 words, return the title
+        if len(title.split()) <= 3:
+            return title
+        title = " ".join(title.split()[:3]) + "..."
+        return title
 
     def get_all_users_for_repo(self, repo_name: str) -> list[str]:
         repo_url = f"{self.root_url}/repos/{self.user}/{repo_name}/contributors"
