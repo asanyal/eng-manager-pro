@@ -88,7 +88,7 @@ with get_emails:
     col1, col2, col3, _ = st.columns([0.5, 0.5, 0.5, 3.5])
 
     with col1:
-        hours = st.text_input("Hours", value=24)
+        hours = st.text_input("Hours", value=10)
 
     with col2:
         st.write(" ")
@@ -236,7 +236,7 @@ with activity_feed:
 
     col1, col2, col3, _ = st.columns([0.5, 0.6, 0.8, 3.5])
     with col1:
-        last_n_hours = st.text_input("Last N Hours", value=24)
+        last_n_hours = st.text_input("Last N Hours", value=12)
     with col2:
         st.write(" ")
         st.write(" ")
@@ -464,7 +464,7 @@ with repo_prs:
     col1, col2, _, _ = st.columns([1, 1, 1, 1])
 
     with col1:
-        repo = st.selectbox("PR Repo", ["api", "runners", "wizard", "galileo-sdk", "ui"])
+        repo = st.selectbox("PR Repo", ["api","core", "runners", "wizard", "galileo-sdk", "ui"])
     with col2:
         st.write(" ")
         st.write(" ")
