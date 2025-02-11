@@ -21,6 +21,7 @@ class GithubAPI:
         }
         self.all_repos = [
             "api",
+            "core",
             "galileo-sdk", 
             "runners",
             "wizard", 

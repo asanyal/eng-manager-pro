@@ -20,9 +20,10 @@ import re
 # Run Galileo
 token_json = "gmail_token.json"
 api_credentials_json = "gmail_api_credentials.json"
-my_email = "atin@rungalileo.io"
+my_email = "atin@galileo.ai"
+my_secondary_email = "atin@rungalileo.io"
 
-base_query = f'to:{my_email} OR cc:{my_email} OR bcc:{my_email} -from:notifications@github.com -from:{my_email} -from:team@netlify.com -from:notifications@shortcut.com -from:notifications@vercel.com'
+base_query = f'to:{my_email} OR cc:{my_email} OR bcc:{my_email} OR to:{my_secondary_email} OR cc:{my_secondary_email} OR bcc:{my_secondary_email} -from:notifications@github.com -from:{my_email} -from:team@netlify.com -from:notifications@shortcut.com -from:notifications@vercel.com '
 
 def parse_email(email_string):
     email_details = {}
@@ -116,11 +117,15 @@ def login():
 
 def fetch_emails_in_last_n_hours(
         n_hours=3, query=None, additional_prompt=None, details=False, new_only=False, ai_generated=False):
+    print(f"Base query: {query}")
     creds = login()
     try:
         service = build("gmail", "v1", credentials=creds)
         n_hours_ago_epoch = None
         if isinstance(n_hours, int):
+            # convert epoch to human readable
+            human_readable_time = datetime.datetime.fromtimestamp(time.time() - n_hours * 60 * 60).strftime('%Y-%m-%d %H:%M:%S')
+            print(f"Get emails between {human_readable_time} and {datetime.datetime.fromtimestamp(time.time())}")
             n_hours_ago_epoch = int(time.time()) - n_hours * 60 * 60
             query = f' after:{n_hours_ago_epoch} ' + query
         elif isinstance(n_hours, tuple):
@@ -189,8 +194,6 @@ def fetch_emails_in_last_n_hours(
                 if body:
                     decoded_body = base64.urlsafe_b64decode(body).decode('utf-8')
                     decoded_body = html.unescape(decoded_body)
-
-                if body:
                     decoded_body = ask_openai(f"""
                         Simplify in clear language and in 2-3 sentences a summary of the email:
                         {decoded_body}

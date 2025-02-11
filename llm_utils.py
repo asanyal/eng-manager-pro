@@ -4,7 +4,7 @@ import streamlit as st
 
 CODE_REVIEW_INSTRUCTIONS = """
 1. Do not add a header saying "Review of code patch".
-2. Use Precise and Concise language.
+2. Use telegraphic language and gerund phrases.
 3. Add a very short 8-10 word summary on what the changes are about.
 4. Suggest up to 3 improvements to the code in bullet points. Add the line number range in brackets in <b> tags.
 5. Do not suggest adding "type hints".
