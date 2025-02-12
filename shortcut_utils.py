@@ -350,52 +350,71 @@ class ApiRouter:
     def explain_epic(self, epic_id: int, start_date: str, end_date: str=datetime.now().strftime('%Y-%m-%d'), code_red_days_after: int=10):
         start_date = datetime.strptime(start_date, '%d %b %Y').strftime('%Y-%m-%d')
         end_date = datetime.strptime(end_date, '%d %b %Y').strftime('%Y-%m-%d')
+
         epic_name = self.get_epic_name(epic_id)
         stories = self.get_stories_for_epic(epic_id)
+
         stories_in_date_range = [story for story in stories if datetime.strptime(story['created_at'], '%Y-%m-%dT%H:%M:%SZ') >= datetime.strptime(start_date, '%Y-%m-%d') and datetime.strptime(story['created_at'], '%Y-%m-%dT%H:%M:%SZ') <= datetime.strptime(end_date, '%Y-%m-%d')]
         total_stories_before_date = len(stories_in_date_range)
 
+        print("### total stories in date range : ", total_stories_before_date)
+
         if total_stories_before_date == 0:
             return "No stories", 0, 0, 0, 0, 0, 0
+
         num_stories_code_red = 0
         not_yet_completed_count = 0
         cumulative_days_for_completion = 0
         completed_count = 0
         cumulative_days_since_filed = 0
+
         display_string = f"<h3>Epic: {epic_name}</h3>"
 
+        c1_map = defaultdict(int) # map to store total tickets per customer
+        c2_map = defaultdict(int) # map to store completed tickets per customer
+
         for i, story in enumerate(stories_in_date_range):
-            if story['completed']:
-                completed_or_not = "Completed"
-                completed_count += 1
-            else:
-                completed_or_not = "Not yet completed"
-                not_yet_completed_count += 1
 
             simplified_title = story['name']
+
             created_at = datetime.strptime(story['created_at'], '%Y-%m-%dT%H:%M:%SZ').strftime('%d %b %y')
-            completed_at = "N/A"
-            if story['completed_at']:
-                completed_at = datetime.strptime(story['completed_at'], '%Y-%m-%dT%H:%M:%SZ').strftime('%d %b %y')
 
             num_days_to_complete = None
+
+            completed_at = story.get('completed_at')
+            completed_or_not = "Completed" if story['completed'] else "Not yet completed"
+
+            customer_label = next((label for label in story['labels'] if label['name'].startswith('customer/')), None)
+            customer_name = None
+            if customer_label and 'name' in customer_label:
+                customer_name = customer_label['name'].replace('customer/', '')
+
+            if story['completed']:
+                completed_count += 1
+                completed_at = datetime.strptime(completed_at, '%Y-%m-%dT%H:%M:%SZ').strftime('%d %b %y')
+                x = f"took {num_days_to_complete} day(s) to complete from filing"
+                c2_map[customer_name] += 1
+            else:
+                days_filed_since = (datetime.now() - datetime.strptime(created_at, '%d %b %y')).days
+                x = f"been {days_filed_since} day(s) since filing"
+                completed_at = "N/A"
+                cumulative_days_since_filed += days_filed_since
+                not_yet_completed_count += 1
+            c1_map[customer_name] += 1
+
             if completed_at != "N/A":
                 num_days_to_complete = (datetime.strptime(completed_at, '%d %b %y') - datetime.strptime(created_at, '%d %b %y')).days
                 cumulative_days_for_completion += num_days_to_complete
-
-            if story['completed']:
-                x = f"took {num_days_to_complete} day(s) to complete from filing"
-            else:
-                days_filed_since = (datetime.now() - datetime.strptime(created_at, '%d %b %y')).days
-                x = f"been {days_filed_since} day(s)"
-                cumulative_days_since_filed += days_filed_since
 
             color = 'red' if num_days_to_complete and num_days_to_complete > code_red_days_after else 'white'
             num_stories_code_red += 1 if color == 'red' else 0
 
             completed_or_not = f"<span style='color: #FF69B4;'>{completed_or_not}</span>" if completed_or_not == "Not yet completed" else completed_or_not
             display_string = f"<span style='color: {color};'>{i+1}. <a href='https://app.shortcut.com/galileo/story/{story['id']}'>{simplified_title}</a> ({story['story_type']}) -- {x} ({completed_or_not})</span>"
-        return display_string, total_stories_before_date, completed_count, not_yet_completed_count, num_stories_code_red, cumulative_days_for_completion, cumulative_days_since_filed
+
+        print("### c1_map : ", c1_map)
+        print("### c2_map : ", c2_map)
+        return display_string, total_stories_before_date, completed_count, not_yet_completed_count, num_stories_code_red, cumulative_days_for_completion, cumulative_days_since_filed, c1_map, c2_map
 
     def explain_epics_from_objective(
             self, 
@@ -417,6 +436,11 @@ class ApiRouter:
             return datetime.now()
         return min([datetime.strptime(story['created_at'], '%Y-%m-%dT%H:%M:%SZ') for story in stories])
 
+    def get_story_tags(self, story_id: int) -> List[str]:
+        url = f"{self._base_url}/v3/stories/{story_id}/tags"
+        tags = self.make_api_call(url)
+        return tags
+
     def explain_epics(
             self,
             epics: List[Dict[str, Any]],
@@ -425,7 +449,7 @@ class ApiRouter:
             code_red_days_after: int=10,
             verbose: bool=False
     ):
-        epic_data = {
+        epic_insights_text = {
             'num_stories': 0,
             'completed': 0,
             'not_completed': 0,
@@ -437,9 +461,9 @@ class ApiRouter:
         }
         min_weighted_score = float('inf')
         max_weighted_score = float('-inf')
-        display_string = ""
+        epics_table = ""
         if verbose:
-            display_string = """
+            epics_table = """
             <table style='width: 100%;'><tr>
                 <th>Epic</th>
                 <th>Started on</th>
@@ -454,6 +478,8 @@ class ApiRouter:
         completion_percent = 0
 
         progress_bar_x = st.progress(0)
+        c1_map = defaultdict(int)
+        c2_map = defaultdict(int)
 
         for i, epic in tqdm(enumerate(epics)):
             progress_bar_x.progress(i/len(epics))
@@ -461,10 +487,17 @@ class ApiRouter:
 
             first_story_date = first_story_date.strftime('%d %b %y')
 
-            story_title, a, b, c, d, e, f = self.explain_epic(epic['id'], start_date, end_date, code_red_days_after)
+            story_title, a, b, c, d, e, f, customer_story_count_map, customer_completed_story_count_map = self.explain_epic(epic['id'], start_date, end_date, code_red_days_after)
 
             if story_title == "No stories":
                 continue
+
+            # loop through both maps and update the epic-level maps
+            print("### Appending to epic-level maps")
+            for l, c in c1_map.items():
+                c1_map[l] += c
+            for l, c in c2_map.items():
+                c2_map[l] += c
 
             if a > 0:   
                 completion_percent = b / a
@@ -473,10 +506,10 @@ class ApiRouter:
                     weighted_score = (completion_percent * 0.25) - ((e / b) * 0.25) - (days_backlog * 0.25)
                     if weighted_score > max_weighted_score:
                         max_weighted_score = weighted_score
-                        epic_data['best_epic'] = f"'{epic['name']}' ({completion_percent * 100:.2f}% complete) with {a} stories, <span style='color: #FF69B4;'>{e/b:.2f} days</span> to complete 1 ticket, {f} days of cumulative backlog."
+                        epic_insights_text['best_epic'] = f"'{epic['name']}' ({completion_percent * 100:.2f}% complete) with {a} stories, <span style='color: #FF69B4;'>{e/b:.2f} days</span> to complete 1 ticket, {f} days of cumulative backlog."
                     if weighted_score < min_weighted_score:
                         min_weighted_score = weighted_score
-                        epic_data['worst_epic'] = f"'{epic['name']}' ({completion_percent * 100:.2f}% complete) with {a} stories, {e/b:.2f} days to complete 1 ticket, {f} days</span> of cumulative backlog."
+                        epic_insights_text['worst_epic'] = f"'{epic['name']}' ({completion_percent * 100:.2f}% complete) with {a} stories, {e/b:.2f} days to complete 1 ticket, {f} days</span> of cumulative backlog."
                 if verbose:
                     W = f"{completion_percent*100:.2f}%"
                     X = a
@@ -491,21 +524,22 @@ class ApiRouter:
                         owner_strings.append(f"{first_name} {counts}")
                     owners = "<br>".join(owner_strings)
 
-                    display_string += f"<tr><td><a href='https://app.shortcut.com/galileo/epic/{epic['id']}'>{epic['name']}</a></td><td>{first_story_date}</td><td>{W}</td><td>{X}</td><td>{b}</td><td>{Y}</td><td>{Z}</td><td  style='font-size: 10px;'>{owners}</td></tr>"
+                    epics_table += f"<tr><td><a href='https://app.shortcut.com/galileo/epic/{epic['id']}'>{epic['name']}</a></td><td>{first_story_date}</td><td>{W}</td><td>{X}</td><td>{b}</td><td>{Y}</td><td>{Z}</td><td  style='font-size: 10px;'>{owners}</td></tr>"
 
-            epic_data['num_stories'] += a
-            epic_data['completed'] += b
-            epic_data['not_completed'] += c
-            epic_data['num_stories_code_red'] += d
-            epic_data['days_for_completion_cumulative'] += e
-            epic_data['days_since_filed_cumulative'] += f
+            epic_insights_text['num_stories'] += a
+            epic_insights_text['completed'] += b
+            epic_insights_text['not_completed'] += c
+            epic_insights_text['num_stories_code_red'] += d
+            epic_insights_text['days_for_completion_cumulative'] += e
+            epic_insights_text['days_since_filed_cumulative'] += f
 
         # make progress bar full 
         progress_bar_x.progress(100)
 
         if verbose:
-            display_string += "</table>"
-        return epic_data, display_string
+            epics_table += "</table>"
+
+        return epic_insights_text, epics_table, customer_story_count_map, customer_completed_story_count_map
 
 class SprintUtils:
     def __init__(self, api_router: ApiRouter):
