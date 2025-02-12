@@ -12,6 +12,7 @@ from calendar_utils import analyze_calendar, parse_event, format_time
 from google_docs import authenticate, list_docs
 import time
 from collections import defaultdict
+import pytz
 
 code_red_days_after = 10
 
@@ -127,10 +128,13 @@ if "skippable_time" not in st.session_state:
 with my_day:
 
     day = ["today", "tomorrow", "day after", "3 days from now", "4 days from now", "5 days from now"]
-    col1, col2, _, _ = st.columns([1, 1, 2, 2])
+    col1, col2, col3, _ = st.columns([1, 1, 1, 3])
     with col1:
-        day_selected = st.selectbox("Day", day)
+        timezone_dropdown = st.selectbox("Timezone", ["US/Pacific", "US/Eastern", "US/Central", "US/Mountain"], index=0)
+        now_pst = datetime.now(pytz.timezone(timezone_dropdown))
     with col2:
+        day_selected = st.selectbox("Day", day)
+    with col3:
         st.write(" ")
         st.write(" ")
         day_button = st.button("Gimme my day", key="day_button", type="primary")
@@ -141,15 +145,23 @@ with my_day:
     with full_width_container:
 
         if day_button:     
-            day_map = {"today": 0, "tomorrow": 1, "day after": 2, "3 days from now": 3, "4 days from now": 4, "5 days from now": 5}
+            day_map = {
+                "today": 0, 
+                "tomorrow": 1, 
+                "day after": 2, 
+                "3 days from now": 3, 
+                "4 days from now": 4, 
+                "5 days from now": 5
+            }
             offset = day_map.get(day_selected, 0)
 
-            start_date = (datetime.now() + timedelta(days=offset)).strftime('%Y-%m-%d')
-            end_date = (datetime.now() + timedelta(days=offset+1)).strftime('%Y-%m-%d')
+            start_date = (now_pst + timedelta(days=offset)).strftime('%Y-%m-%d')
+            end_date = (now_pst + timedelta(days=offset+1)).strftime('%Y-%m-%d')
 
             events_context = analyze_calendar(start_date, end_date)
             events = [parse_event(event) for event in events_context]
             print(f"{len(events)} events parsed")
+
             display_html = []
 
             idx = 0
@@ -161,7 +173,6 @@ with my_day:
 
                 if event['date'] >= datetime.strptime(start_date, '%Y-%m-%d') and event['date'] <= datetime.strptime(end_date, '%Y-%m-%d'):
                     description = event['description']
-                    print(f"Appending ----> {i}. {description}")                    
                     
                     current_start_time = datetime.strptime(str(event['start_time']), '%H:%M:%S')
 
@@ -172,7 +183,7 @@ with my_day:
                     current_start_time_str = current_start_time.strftime('%I.%M %p')
                     current_duration = int(event['duration'])
 
-                    if "standup" in description.lower() or "planning" in description.lower():
+                    if "standup" in description.lower() or "stand up" in description.lower() or "planning" in description.lower():
                         skippable_time += current_duration
                         description = f"<span style='color: #1f9f8a;'>[Skippable] {description}</span>"
                     
@@ -192,7 +203,6 @@ with my_day:
                     else:
                         prev_duration = 0
 
-                    print("Adding table row...")
                     display_html.append(f"<tr><td>{current_start_time_str} (<span style='color: #FF69B4;'>{format_time(current_duration)}</span>)</td><td>{description}</td></tr>") 
                     prev_end_time = datetime.strptime(str(event['end_time']), '%H:%M:%S')
                     
@@ -201,12 +211,10 @@ with my_day:
             if idx == 0:
                 display_html.append("<tr><td><span style='color: #00FF00;'>Free! Free! Free!</span></td></tr>")
 
-            print(f"Skippable time: {skippable_time}")
             st.session_state.skippable_time = skippable_time
 
             display_html = ["<table border='1' style='width: 70%;'><tr><th>Event</th><th>Time</th><th>After the event</th></tr>"] + display_html + ["</table>"]
 
-            print("Adding table to session state...")
             st.session_state.my_day_events = "".join(display_html)
 
         if leave_home_at_time is not None:
