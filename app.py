@@ -1,16 +1,17 @@
 import streamlit as st
 from llm_utils import CODE_REVIEW_GUIDELINES, CODE_REVIEW_INSTRUCTIONS
-from sprint_utils import DisplayUtils, ApiRouter, SprintUtils
+from shortcut_utils import DisplayUtils, ApiRouter, SprintUtils
 from email_utils import fetch_emails_in_last_n_hours, base_query
 from llm_utils import ask_openai
 from datetime import datetime, timedelta
 from tqdm import tqdm
 from IPython.display import display, HTML
-from sprint_utils import active_states
+from shortcut_utils import active_states
 from github_utils import GithubAPI
 from calendar_utils import analyze_calendar, parse_event, format_time
 from google_docs import authenticate, list_docs
 import time
+from collections import defaultdict
 
 code_red_days_after = 10
 
@@ -373,22 +374,28 @@ if 'epic_explanation_display' not in st.session_state:
     st.session_state.epic_explanation_display = None
 if 'epic_explanation_results' not in st.session_state:
     st.session_state.epic_explanation_results = None
-
+if 'c1_map' not in st.session_state:
+    st.session_state.c1_map = defaultdict(int)
+if 'c2_map' not in st.session_state:
+    st.session_state.c2_map = defaultdict(int)
 
 with explain_epics:
     
     epic_ids = st.text_input("Comma separated Epic IDs e.g. 21023, 21024")
     explain_epic_clicked = st.button("Explain Epics", type="primary")
+
     full_width_container = st.container()
 
     with full_width_container:
         
         if explain_epic_clicked and epic_ids is not None:
             try:
+
                 epic_ids = [int(id) for id in epic_ids.split(",")]
 
                 epics = [api_router.get_epic_from_id(epic_id) for epic_id in epic_ids]
-                results, display_string = api_router.explain_epics(
+
+                results, display_string, c1_map, c2_map = api_router.explain_epics(
                     epics, 
                     start, 
                     end, 
@@ -397,6 +404,8 @@ with explain_epics:
                 )
                 st.session_state.epic_explanation_display = display_string
                 st.session_state.epic_explanation_results = results
+                st.session_state.c1_map = c1_map
+                st.session_state.c2_map = c2_map
             except ValueError:
                 st.error("Invalid input.")
         
@@ -408,6 +417,35 @@ with explain_epics:
                 start, 
                 end
             )
+        if st.session_state.c1_map and st.session_state.c2_map:
+            completed_stories = sum(st.session_state.c2_map.values())
+            total_stories = sum(st.session_state.c1_map.values())
+            # get the set of keys from c1_map
+            customer_labels = list(st.session_state.c1_map.keys())
+
+            if len(customer_labels) == 1 and customer_labels[0] == None:
+                pass
+            else:
+                st.markdown(f"<h3> Stories with Customer Labels</h3>", unsafe_allow_html=True)
+                
+                # ignore the None key
+                c1_map_without_none = {k: v for k, v in st.session_state.c1_map.items() if k is not None}
+                c2_map_without_none = {k: v for k, v in st.session_state.c2_map.items() if k is not None}
+
+                completed_stories = sum(c2_map_without_none.values())
+                total_stories = sum(c1_map_without_none.values())
+
+                st.markdown(f"<b>Completed</b> {completed_stories} out of <b>{total_stories}</b> customer tickets between <b>{start}</b> and <b>{end}</b>. That's a completion rate of <b>{completed_stories / total_stories * 100:.2f}%</b>.", unsafe_allow_html=True)
+
+                completed_column, total_column = st.columns([1, 1])
+                with completed_column:
+                    st.markdown(f"<b>Completed between {start} and {end}</b>", unsafe_allow_html=True)
+                    st.markdown(f"<span> Total Tickets: {sum(st.session_state.c2_map.values())}</span>", unsafe_allow_html=True)
+                    st.bar_chart(st.session_state.c2_map, color="#00FF00", height=300)
+                with total_column:
+                    st.markdown(f"<b>Total tickets between {start} and {end}</b>", unsafe_allow_html=True)
+                    st.markdown(f"<span> Total Tickets: {sum(st.session_state.c1_map.values())}</span>", unsafe_allow_html=True)
+                    st.bar_chart(st.session_state.c1_map, color="#9c0000", height=300)
 
 
 if 'author_prs_data' not in st.session_state:
