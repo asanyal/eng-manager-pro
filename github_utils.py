@@ -7,6 +7,7 @@ import warnings
 import pandas as pd
 import plotly.express as px
 from urllib3.exceptions import NotOpenSSLWarning
+import pytz
 
 warnings.filterwarnings("ignore", category=NotOpenSSLWarning)
 
@@ -40,8 +41,31 @@ class GithubAPI:
     def _get_recent_activity(self, repo_name:str):
         url = f"{self.root_url}/repos/{self.user}/{repo_name}/events?per_page=100&page=1"
         response = requests.get(url, headers=self.headers)
-        print(f"Headers: {self.headers}")
         return response.json()
+        headers = {"Authorization": f"token {self.token}"}
+        base_url = f"{self.root_url}/search/issues?q="
+        
+        results = []
+        
+        for date in dates:
+            daily_counts = []
+            for repo in repos:
+                query = f'repo:{repo} type:pr created:{date}'
+                url = f"{base_url}{query}"
+                
+                response = requests.get(url, headers=headers)
+                
+                if response.status_code == 200:
+                    total_prs = response.json().get("total_count", 0)
+                else:
+                    print(f"Error fetching PRs for {repo} on {date}: {response.status_code}, {response.text}")
+                    total_prs = None  # Indicate an error
+                
+                daily_counts.append(total_prs)
+            
+            results.append(daily_counts)
+
+        return results
 
     def get_user_activity(self, last_n_hours: int = 24) -> dict:
         user_activity = {}
@@ -181,9 +205,11 @@ class GithubAPI:
 
             for event in events:
                 event_type = event['type']
-                user = event['actor']['login']
+                user = f"<a href='https://github.com/{event['actor']['login']}'>{event['actor']['login']}</a>"
                 repo = event['repo']['name']
-                event_time = f"<span style='color: #FF69B4;'>[{datetime.strptime(event['created_at'], '%Y-%m-%dT%H:%M:%SZ').strftime("%-d %b (%I:%M %p)")}]</span>"
+                utc_time = datetime.strptime(event['created_at'], '%Y-%m-%dT%H:%M:%SZ')
+                pst_time = utc_time.astimezone(pytz.timezone('US/Pacific'))
+                event_time = f"<span style='color: #FF69B4;'>[{pst_time.strftime("%-d %b (%I:%M %p)")}]</span>"
                 repo_name = f"<span style='color: #7FFFD4;'>[{repo.split('/')[-1]}]</span>"
 
                 if event_type == 'PullRequestEvent' or event_type == 'PullRequestReviewEvent':
@@ -200,7 +226,9 @@ class GithubAPI:
                     pr_title = self.get_trimmed_pr_title(event['payload']['pull_request']['title'])
                     feed_strings.append(f"{event_time}{repo_name} <b>{user}</b> created a <a href='{pr}'>PR</a> on <b>{repo}</b> <span style='font-size: 8px;'>({pr_title})</span>")
                 elif event_type == 'PushEvent':
-                    pr_title = self.get_trimmed_pr_title(event['payload']['commits'][0]['message'])
+                    pr_title = ""
+                    if 'commits' in event['payload'] and len(event['payload']['commits']) > 0:  
+                        pr_title = self.get_trimmed_pr_title(event['payload']['commits'][0]['message'])
                     feed_strings.append(f"{event_time}{repo_name} <b>{user}</b> pushed a commit to <b>{repo}</b> <span style='font-size: 8px;'>({pr_title})</span>")
                 elif event_type == 'IssuesEvent':
                     feed_strings.append(f"{event_time}{repo_name} <b>{user}</b> created an issue on <b>{repo}</b>")
@@ -268,9 +296,9 @@ class GithubAPI:
         response = requests.get(f"{self.root_url}/user/repos", headers=self.headers)
         return [repo['name'] for repo in response.json()]
 
-    def get_prs_for_repo(self, repo_name: str, start: str, end: str, author: str = None) -> list[str]:
-        start_date = datetime.strptime(start, "%d %b %Y").strftime("%Y-%m-%d")
-        end_date = datetime.strptime(end, "%d %b %Y").strftime("%Y-%m-%d")
+    def get_prs_for_repo(self, repo_name: str, start: datetime, end: datetime, author: str = None) -> list[str]:
+        start_date = start.strftime("%Y-%m-%d")
+        end_date = end.strftime("%Y-%m-%d")
 
         # merged PRs
         search_query = f"repo:{self.user}/{repo_name} created:{start_date}..{end_date}"
@@ -327,11 +355,13 @@ class GithubAPI:
 
         continuous_df = pd.DataFrame(date_range, columns=['date'])
         continuous_df['date'] = continuous_df['date'].dt.date
+        # ignore the last value
+        continuous_df = continuous_df[:-1]
 
         result_df = pd.merge(continuous_df, f_df, on='date', how='left').fillna({'PR count': 0})
 
-        fig = px.bar(result_df, x='date', y='PR count', width=400, height=300)
-        fig.update_traces(marker=dict(color='rgba(0, 100, 0, 0.5)'))
+        fig = px.line(result_df, x='date', y='PR count', width=400, height=300, color_discrete_sequence=['green'])
+        # fig.update_traces(marker=dict(color='rgba(0, 100, 0, 0.5)'))
         fig.update_layout(title=f"PRs by {author}", xaxis_title="Date", yaxis_title="PR count")
         fig.update_yaxes(range=[0, result_df['PR count'].max() + 1])
         return fig
@@ -345,8 +375,6 @@ class GithubAPI:
         closed_prs = 0
         for pr in prs:
             if isinstance(pr['created_at'], str):
-                print("Instance of str")
-                print(pr['created_at'])
                 pr['created_at'] = datetime.strptime(pr['created_at'], "%b %d")
             elif isinstance(pr['created_at'], datetime):
                 pr['created_at'] = pr['created_at'].strftime("%b %d")

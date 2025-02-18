@@ -7,6 +7,8 @@ from dateutil import parser
 import googleapiclient.discovery
 import datetime
 import os
+import pytz
+from datetime import datetime, timedelta
 
 INTERNAL_EMAIL_DOMAIN = "galileo.ai"
 EXCLUDED_EMAIL_DOMAINS = ["@resource.calendar.google.com"]
@@ -69,8 +71,8 @@ def analyze_calendar(sd, ed):
     sd_split = sd.split("-")
     ed_split = ed.split("-")
 
-    start_date = datetime.datetime(int(sd_split[0]), int(sd_split[1]), int(sd_split[2])).isoformat() + 'Z'
-    end_date = datetime.datetime(int(ed_split[0]), int(ed_split[1]), int(ed_split[2])).isoformat() + 'Z'
+    start_date = datetime(int(sd_split[0]), int(sd_split[1]), int(sd_split[2])).isoformat() + 'Z'
+    end_date = datetime(int(ed_split[0]), int(ed_split[1]), int(ed_split[2])).isoformat() + 'Z'
     
     events_result = service.events().list(
         calendarId='primary', 
@@ -314,3 +316,102 @@ def generate_markdown_table(data, headers):
     for row in data:
         table += "| " + " | ".join(str(row[header]) for header in headers) + " |\n"
     return table
+
+
+def generate_schedule_html(day_selected, now_in_timezone):
+
+    import pytz
+    now_pst = datetime.now(pytz.timezone('US/Pacific'))
+    # Mapping of user-friendly day names to offset values
+    day_map = {
+        "today": 0, 
+        "tomorrow": 1, 
+        "day after": 2, 
+        "3 days from now": 3, 
+        "4 days from now": 4, 
+        "5 days from now": 5
+    }
+    
+    # Get the offset for the selected day
+    offset = day_map.get(day_selected, 0)
+
+    # Calculate start and end dates
+    start_date = (now_pst + timedelta(days=offset)).strftime('%Y-%m-%d')
+    end_date = (now_pst + timedelta(days=offset+1)).strftime('%Y-%m-%d')
+
+    # Fetch and parse calendar events
+    events_context = analyze_calendar(start_date, end_date)
+    events = [parse_event(event) for event in events_context]
+    print(f"{len(events)} events parsed")
+
+    display_html = []
+
+    prev_end_time = None
+    skippable_time = 0
+    time_of_first_event = None
+    start_time_of_last_event = None
+    end_time_of_last_event = None
+
+    for i, event in enumerate(events):
+        event_date = event['date']
+
+        if event_date >= datetime.strptime(start_date, '%Y-%m-%d') and event_date <= datetime.strptime(end_date, '%Y-%m-%d'):
+            description = event['description']
+            current_start_time = datetime.strptime(str(event['start_time']), '%H:%M:%S')
+
+            # Set leave_home_at_time to the earliest start time of all events
+            if time_of_first_event is None or current_start_time < time_of_first_event:
+                time_of_first_event = current_start_time
+
+            if start_time_of_last_event is None or current_start_time > start_time_of_last_event:
+                start_time_of_last_event = current_start_time
+                end_time_of_last_event = datetime.strptime(str(event['end_time']), '%H:%M:%S')
+
+            current_start_time_str = current_start_time.strftime('%I.%M %p')
+            current_duration = int(event['duration'])
+
+            # Highlight skippable meetings
+            if any(keyword in description.lower() for keyword in ["standup", "stand up", "planning"]):
+                skippable_time += current_duration
+                description = f"<span style='color: #1f9f8a;'>[Skippable] {description}</span>"
+            
+            if prev_end_time is not None:
+                prev_break_time = (current_start_time - prev_end_time).total_seconds() / 60
+                prev_end_time_str = prev_end_time.strftime('%I.%M %p')
+
+                if prev_break_time > 0:
+                    display_html[-1] = display_html[-1].replace(
+                        "</tr>", 
+                        f"<td><span style='color: #006400;'>{abs(int(prev_break_time))} min</span> break "
+                        f"<span style='font-size: 10px;'>({prev_end_time_str} - {current_start_time_str})</span></td></tr>"
+                    )
+                elif prev_break_time < 0:
+                    display_html[-1] = display_html[-1].replace(
+                        "</tr>", 
+                        f"<td><span style='color: #FF0000;'>{abs(int(prev_break_time))} min overlap with next event</span></td></tr>"
+                    )
+                else:
+                    display_html[-1] = display_html[-1].replace(
+                        "</tr>", 
+                        f"<td><span style='color: #FF0000;'>No break!</span></td></tr>"
+                    )
+
+            display_html.append(
+                f"<tr><td>{current_start_time_str} (<span style='color: #FF69B4;'>{format_time(current_duration)}</span>)"
+                f"</td><td>{description}</td></tr>"
+            )
+
+            prev_end_time = datetime.strptime(str(event['end_time']), '%H:%M:%S')
+
+    # If no events, display a free schedule message
+    if not display_html:
+        display_html.append("<tr><td><span style='color: #00FF00;'>Free! Free! Free!</span></td></tr>")
+
+    # Construct final HTML table
+    display_html = (
+        ["<table border='1' style='width: 70%;'><tr><th>Event</th><th>Time</th><th>After the event</th></tr>"] 
+        + display_html 
+        + ["</table>"]
+    )
+
+    return "".join(display_html), time_of_first_event, end_time_of_last_event, skippable_time

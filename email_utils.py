@@ -23,7 +23,7 @@ api_credentials_json = "gmail_api_credentials.json"
 my_email = "atin@galileo.ai"
 my_secondary_email = "atin@rungalileo.io"
 
-base_query = f'to:{my_email} OR cc:{my_email} OR bcc:{my_email} OR to:{my_secondary_email} OR cc:{my_secondary_email} OR bcc:{my_secondary_email} -from:notifications@github.com -from:{my_email} -from:team@netlify.com -from:notifications@shortcut.com -from:notifications@vercel.com '
+BASE_QUERY = f'to:{my_email} OR cc:{my_email} OR bcc:{my_email} OR to:{my_secondary_email} OR cc:{my_secondary_email} OR bcc:{my_secondary_email} -from:notifications@github.com -from:{my_email} -from:team@netlify.com -from:notifications@shortcut.com -from:notifications@vercel.com '
 
 def parse_email(email_string):
     email_details = {}
