@@ -5,9 +5,12 @@ from tqdm import tqdm
 from IPython.display import display, HTML
 from collections import defaultdict, Counter
 import streamlit as st
+import pandas as pd
+from datetime import timedelta
+from utils.common_utils import CODE_RED_DAYS_AFTER
 
 PRODUCT_ROADMAP_OBJECTIVE = "Product Roadmap (2025)"
-CUSTOMER_ISSUES_EPIC = "Customer Requests, Bugs, One-offs, On call (2025)"
+CUSTOMER_ISSUES_EPIC = "Customer Tickets: 2025H1"
 PIOTR_EPIC = "LLM QA: 2025H1"
 ON_CALL_EPIC = "On Call Issues: 2025H1" 
 BACKEND_ENHANCEMENTS_EPIC = "Backend Enhancements: 2025H1"
@@ -98,7 +101,7 @@ class DisplayUtils:
 
         display(HTML(display_string))
 
-class ApiRouter:
+class ShortcutGateway:
     def __init__(self):
         self._base_url = 'https://api.app.shortcut.com/api'
         self._token = 'c8bcc9eb-0588-439b-9d35-3f8a75d3deee'
@@ -347,7 +350,27 @@ class ApiRouter:
             epics = [epic for epic in epics if not epic['completed']]
         return epics
 
-    def explain_epic(self, epic_id: int, start_date: str, end_date: str=datetime.now().strftime('%Y-%m-%d'), code_red_days_after: int=10):
+    def get_2week_trailing_backlog(self, epic_id: int, start_date: datetime, end_date: datetime) -> list:
+        from datetime import timedelta
+        epic = self.get_epic_from_id(epic_id)
+        tuples = []
+        for i in range((end_date - start_date).days):
+            current_date = start_date + timedelta(days=i)
+            s = (current_date - timedelta(days=14)).strftime('%d %b %Y')
+            e = current_date.strftime('%d %b %Y')
+            _,_,_,cum_days_filed,_,_,incomplete_count,_,_ = self.explain_epic(epic['id'], s, e)
+            backlog_rate = 0
+            if incomplete_count > 0:
+                backlog_rate = cum_days_filed / incomplete_count
+            tuples.append((current_date, backlog_rate))
+        return tuples
+
+    def explain_epic(
+            self, 
+            epic_id: int, 
+            start_date: str, 
+            end_date: str=datetime.now().strftime('%Y-%m-%d'), 
+            code_red_days_after: int=10):
         start_date = datetime.strptime(start_date, '%d %b %Y').strftime('%Y-%m-%d')
         end_date = datetime.strptime(end_date, '%d %b %Y').strftime('%Y-%m-%d')
 
@@ -357,16 +380,14 @@ class ApiRouter:
         stories_in_date_range = [story for story in stories if datetime.strptime(story['created_at'], '%Y-%m-%dT%H:%M:%SZ') >= datetime.strptime(start_date, '%Y-%m-%d') and datetime.strptime(story['created_at'], '%Y-%m-%dT%H:%M:%SZ') <= datetime.strptime(end_date, '%Y-%m-%d')]
         total_stories_before_date = len(stories_in_date_range)
 
-        print("### total stories in date range : ", total_stories_before_date)
-
         if total_stories_before_date == 0:
-            return "No stories", 0, 0, 0, 0, 0, 0
+            return "No stories", 0, 0, 0, 0, 0, 0, {}, {}
 
         num_stories_code_red = 0
         not_yet_completed_count = 0
         cumulative_days_for_completion = 0
         completed_count = 0
-        cumulative_days_since_filed = 0
+        cumulative_days_filed_since = 0
 
         display_string = f"<h3>Epic: {epic_name}</h3>"
 
@@ -384,23 +405,30 @@ class ApiRouter:
             completed_at = story.get('completed_at')
             completed_or_not = "Completed" if story['completed'] else "Not yet completed"
 
-            customer_label = next((label for label in story['labels'] if label['name'].startswith('customer/')), None)
-            customer_name = None
-            if customer_label and 'name' in customer_label:
-                customer_name = customer_label['name'].replace('customer/', '')
-
+            labels = story.get('labels', [])
+            label_names = [label['name'] for label in labels]
             if story['completed']:
                 completed_count += 1
                 completed_at = datetime.strptime(completed_at, '%Y-%m-%dT%H:%M:%SZ').strftime('%d %b %y')
                 x = f"took {num_days_to_complete} day(s) to complete from filing"
-                c2_map[customer_name] += 1
+                for l in label_names:
+                    if l.startswith('customer/'):
+                        label_name = l.replace('customer/', '')
+                    else:
+                        label_name = l
+                    c2_map[label_name] += 1
             else:
                 days_filed_since = (datetime.now() - datetime.strptime(created_at, '%d %b %y')).days
                 x = f"been {days_filed_since} day(s) since filing"
                 completed_at = "N/A"
-                cumulative_days_since_filed += days_filed_since
+                cumulative_days_filed_since += days_filed_since
                 not_yet_completed_count += 1
-            c1_map[customer_name] += 1
+            for l in label_names:
+                if l.startswith('customer/'):
+                    customer_name = l.replace('customer/', '')
+                else:
+                    customer_name = l
+                c1_map[customer_name] += 1
 
             if completed_at != "N/A":
                 num_days_to_complete = (datetime.strptime(completed_at, '%d %b %y') - datetime.strptime(created_at, '%d %b %y')).days
@@ -412,9 +440,7 @@ class ApiRouter:
             completed_or_not = f"<span style='color: #FF69B4;'>{completed_or_not}</span>" if completed_or_not == "Not yet completed" else completed_or_not
             display_string = f"<span style='color: {color};'>{i+1}. <a href='https://app.shortcut.com/galileo/story/{story['id']}'>{simplified_title}</a> ({story['story_type']}) -- {x} ({completed_or_not})</span>"
 
-        print("### c1_map : ", c1_map)
-        print("### c2_map : ", c2_map)
-        return display_string, total_stories_before_date, completed_count, not_yet_completed_count, num_stories_code_red, cumulative_days_for_completion, cumulative_days_since_filed, c1_map, c2_map
+        return display_string, total_stories_before_date, completed_count, not_yet_completed_count, num_stories_code_red, cumulative_days_for_completion, cumulative_days_filed_since, c1_map, c2_map
 
     def explain_epics_from_objective(
             self, 
@@ -441,15 +467,49 @@ class ApiRouter:
         tags = self.make_api_call(url)
         return tags
 
+    def get_completion_rate_for_epic(self, start, end, epic):
+        dates = [start + timedelta(days=i) for i in range((end - start).days)]
+        tuples = []
+        for date in dates:
+            start_date = date.strftime("%d %b %Y")
+            end_date = (date + timedelta(days=1)).strftime("%d %b %Y")
+            insights, table, c1m, c2m = self.explain_epics(
+                epics=[epic], 
+                start_date=start_date,
+                end_date=end_date, 
+                code_red_days_after=CODE_RED_DAYS_AFTER, 
+                verbose=False,
+                show_progress_bar=False
+            )
+            total_tickets = sum(c1m.values())
+            completed_tickets = sum(c2m.values())
+            tuples.append((start_date, total_tickets, completed_tickets))
+
+        tuples.sort(key=lambda x: x[0], reverse=True)
+        df = pd.DataFrame(tuples, columns=["Date", "Filed", "Completed"])
+        df["Date"] = pd.to_datetime(df["Date"], format="%d %b %Y")
+        df = df.sort_values("Date")
+
+        df_melted = df.melt(id_vars=["Date"], var_name="Category", value_name="Count")
+        return df_melted
+
+    def get_backlog_rate_for_epic(self, start, end, epic_id):
+        res = self.get_2week_trailing_backlog(epic_id=epic_id, start_date=start, end_date=end)
+        df = pd.DataFrame(res, columns=["Date", "Backlog Rate"])
+        df["Date"] = pd.to_datetime(df["Date"], format="%d %b %Y")
+        df = df.sort_values("Date")
+        return df
+
     def explain_epics(
             self,
             epics: List[Dict[str, Any]],
             start_date: str,
             end_date: str=datetime.now().strftime('%Y-%m-%d'),
             code_red_days_after: int=10,
-            verbose: bool=False
+            verbose: bool=False,
+            show_progress_bar: bool=True
     ):
-        epic_insights_text = {
+        epic_insights = {
             'num_stories': 0,
             'completed': 0,
             'not_completed': 0,
@@ -477,27 +537,30 @@ class ApiRouter:
             """
         completion_percent = 0
 
-        progress_bar_x = st.progress(0)
-        c1_map = defaultdict(int)
-        c2_map = defaultdict(int)
+        if show_progress_bar:
+            progress_bar_x = st.progress(0)
+
+        c1_map_epic_level = defaultdict(int)
+        c2_map_epic_level = defaultdict(int)
 
         for i, epic in tqdm(enumerate(epics)):
-            progress_bar_x.progress(i/len(epics))
+            if show_progress_bar:
+                progress_bar_x.progress(i/len(epics))
+
             first_story_date = self.get_first_story_date(epic['id'])
 
             first_story_date = first_story_date.strftime('%d %b %y')
 
-            story_title, a, b, c, d, e, f, customer_story_count_map, customer_completed_story_count_map = self.explain_epic(epic['id'], start_date, end_date, code_red_days_after)
+            story_title, a, b, c, d, e, f, c1_map, c2_map = self.explain_epic(epic['id'], start_date, end_date, code_red_days_after)
 
             if story_title == "No stories":
                 continue
 
             # loop through both maps and update the epic-level maps
-            print("### Appending to epic-level maps")
             for l, c in c1_map.items():
-                c1_map[l] += c
+                c1_map_epic_level[l] += c
             for l, c in c2_map.items():
-                c2_map[l] += c
+                c2_map_epic_level[l] += c
 
             if a > 0:   
                 completion_percent = b / a
@@ -506,10 +569,10 @@ class ApiRouter:
                     weighted_score = (completion_percent * 0.25) - ((e / b) * 0.25) - (days_backlog * 0.25)
                     if weighted_score > max_weighted_score:
                         max_weighted_score = weighted_score
-                        epic_insights_text['best_epic'] = f"'{epic['name']}' ({completion_percent * 100:.2f}% complete) with {a} stories, <span style='color: #FF69B4;'>{e/b:.2f} days</span> to complete 1 ticket, {f} days of cumulative backlog."
+                        epic_insights['best_epic'] = f"'{epic['name']}' ({completion_percent * 100:.2f}% complete) with {a} stories, <span style='color: #FF69B4;'>{e/b:.2f} days</span> to complete 1 ticket, {f} days of cumulative backlog."
                     if weighted_score < min_weighted_score:
                         min_weighted_score = weighted_score
-                        epic_insights_text['worst_epic'] = f"'{epic['name']}' ({completion_percent * 100:.2f}% complete) with {a} stories, {e/b:.2f} days to complete 1 ticket, {f} days</span> of cumulative backlog."
+                        epic_insights['worst_epic'] = f"'{epic['name']}' ({completion_percent * 100:.2f}% complete) with {a} stories, {e/b:.2f} days to complete 1 ticket, {f} days</span> of cumulative backlog."
                 if verbose:
                     W = f"{completion_percent*100:.2f}%"
                     X = a
@@ -526,24 +589,25 @@ class ApiRouter:
 
                     epics_table += f"<tr><td><a href='https://app.shortcut.com/galileo/epic/{epic['id']}'>{epic['name']}</a></td><td>{first_story_date}</td><td>{W}</td><td>{X}</td><td>{b}</td><td>{Y}</td><td>{Z}</td><td  style='font-size: 10px;'>{owners}</td></tr>"
 
-            epic_insights_text['num_stories'] += a
-            epic_insights_text['completed'] += b
-            epic_insights_text['not_completed'] += c
-            epic_insights_text['num_stories_code_red'] += d
-            epic_insights_text['days_for_completion_cumulative'] += e
-            epic_insights_text['days_since_filed_cumulative'] += f
+            epic_insights['num_stories'] += a
+            epic_insights['completed'] += b
+            epic_insights['not_completed'] += c
+            epic_insights['num_stories_code_red'] += d
+            epic_insights['days_for_completion_cumulative'] += e
+            epic_insights['days_since_filed_cumulative'] += f
 
         # make progress bar full 
-        progress_bar_x.progress(100)
+        if show_progress_bar:
+            progress_bar_x.progress(100)
 
         if verbose:
             epics_table += "</table>"
-
-        return epic_insights_text, epics_table, customer_story_count_map, customer_completed_story_count_map
+        
+        return epic_insights, epics_table, c1_map_epic_level, c2_map_epic_level
 
 class SprintUtils:
-    def __init__(self, api_router: ApiRouter):
-        self.api_router = api_router
+    def __init__(self, shortcut_gateway: ShortcutGateway):
+        self.shortcut_gateway = shortcut_gateway
 
     def categorize(self, stories):
         data = []
@@ -554,11 +618,11 @@ class SprintUtils:
             owner = "Unassigned"
             # if it's not assigned, use the requester
             if len(story['owner_ids']) > 0:
-                owner = self.api_router.get_owner_name(story['owner_ids'][0])
+                owner = self.shortcut_gateway.get_owner_name(story['owner_ids'][0])
             story_type = story.get('story_type', 'Unknown')
-            story_state = self.api_router.get_workflow_name(story['workflow_state_id'])
-            objective_name = self.api_router.get_objective(story['id'])
-            epic_name = self.api_router.get_epic(story['id'])
+            story_state = self.shortcut_gateway.get_workflow_name(story['workflow_state_id'])
+            objective_name = self.shortcut_gateway.get_objective(story['id'])
+            epic_name = self.shortcut_gateway.get_epic(story['id'])
             workstream = "Other Things"
             if objective_name == PRODUCT_ROADMAP_OBJECTIVE:
                 workstream = "Roadmap"
@@ -632,16 +696,16 @@ class SprintUtils:
             # Get owner name
             owner = "Unassigned"
             if len(story['owner_ids']) != 0:
-                owner = self.api_router.get_owner(story['owner_ids'][0])
+                owner = self.shortcut_gateway.get_owner(story['owner_ids'][0])
             if owner in ignore_list:
                 continue
             # If person is not None, only show stories for that person
             if ((person is None) or (owner == person)):
                 story_type = story.get('story_type', 'Unknown')
-                story_state = self.api_router.get_workflow_name(story['workflow_state_id'])
+                story_state = self.shortcut_gateway.get_workflow_name(story['workflow_state_id'])
                 
-                objective = self.api_router.get_objective(story['id'])
-                epic = self.api_router.get_epic(story['id'])
+                objective = self.shortcut_gateway.get_objective(story['id'])
+                epic = self.shortcut_gateway.get_epic(story['id'])
 
                 workstream = "Other Things"
                 if objective == PRODUCT_ROADMAP_OBJECTIVE:
