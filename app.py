@@ -1,5 +1,5 @@
 import streamlit as st
-from llm_utils import CODE_REVIEW_GUIDELINES, CODE_REVIEW_INSTRUCTIONS
+from llm_utils import CODE_REVIEW_GUIDELINES_V1, CODE_REVIEW_INSTRUCTIONS_V1
 from shortcut_utils import DisplayUtils, ShortcutGateway, SprintUtils
 from llm_utils import ask_openai
 from datetime import datetime, timedelta
@@ -39,12 +39,11 @@ with col2:
     end = st.date_input("End", value=datetime.now(), format="MM-DD-YYYY")
 
 tab_names = [
-    "My Day", "Emails", "GH Activity", "Smart Reviews", "Objectives", "Execution Health",
-    "Person", "Epics", "GH Author Activity", "GH Repo Activity", "Highlight", "Docs",
-    "Competitors"
+    "My Day", "Emails", "GH Activity", "Smart Reviews", "GH Author Activity", "GH Repo Activity", "Execution Health", "Objectives", 
+    "Epics", "SH Author Activity", "Highlight", "Docs", "Competitors"
 ]
 
-my_day, get_emails, activity_feed, smart_reviews, explain_an_objective, execution_health, analyze_a_person, explain_epics, author_prs, repo_prs, highlighter, google_docs, competitors = st.tabs(tab_names)
+my_day, get_emails, activity_feed, smart_reviews, author_prs, repo_prs, execution_health, explain_an_objective, explain_epics, analyze_a_person, highlighter, google_docs, competitors = st.tabs(tab_names)
 
 
 with get_emails:

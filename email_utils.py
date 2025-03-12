@@ -18,12 +18,10 @@ from tqdm import tqdm
 import re
 
 # Run Galileo
-token_json = "gmail_token.json"
-api_credentials_json = "gmail_api_credentials.json"
+
 my_email = "atin@galileo.ai"
 my_secondary_email = "atin@rungalileo.io"
-
-BASE_QUERY = f'to:{my_email} OR cc:{my_email} OR bcc:{my_email} OR to:{my_secondary_email} OR cc:{my_secondary_email} OR bcc:{my_secondary_email} -from:notifications@github.com -from:{my_email} -from:team@netlify.com -from:notifications@shortcut.com -from:notifications@vercel.com '
+my_personal_email = "atin.sanyal@gmail.com"
 
 def parse_email(email_string):
     email_details = {}
@@ -99,8 +97,12 @@ recruiter_emails = [
     'jbizzell@rungalileo.io',
 ]
 
-def login():
+def login(personal=False):
     creds = None
+
+    token_json = "gmail_token_personal.json" if personal else "gmail_token.json"
+    api_credentials_json = "gmail_api_credentials_personal.json" if personal else "gmail_api_credentials.json"
+
     if os.path.exists(token_json):
         creds = Credentials.from_authorized_user_file(token_json, SCOPES)
     if not creds or not creds.valid:
@@ -116,9 +118,40 @@ def login():
 
 
 def fetch_emails_in_last_n_hours(
-        n_hours=3, query=None, additional_prompt=None, details=False, new_only=False, ai_generated=False):
-    print(f"Base query: {query}")
-    creds = login()
+        n_hours=3, 
+        additional_prompt=None, 
+        details=False, 
+        new_only=False, 
+        ai_generated=False,
+        personal=False):
+
+    if personal:
+        base_query = f"""
+            to:{my_personal_email} OR 
+            cc:{my_personal_email} OR 
+            bcc:{my_personal_email} 
+            -from:{my_personal_email}
+        """
+    else:
+        base_query = f"""
+            to:{my_email} OR 
+            cc:{my_email} OR 
+            bcc:{my_email} OR 
+            to:{my_secondary_email} OR 
+            cc:{my_secondary_email} OR 
+            bcc:{my_secondary_email} 
+            -from:{my_email} 
+            -from:{my_secondary_email} 
+            -from:notifications@github.com 
+            -from:team@netlify.com 
+            -from:notifications@shortcut.com 
+            -from:notifications@vercel.com 
+        """
+
+    print(f"Base query: {base_query}")
+
+    creds = login(personal=personal)
+
     try:
         service = build("gmail", "v1", credentials=creds)
         n_hours_ago_epoch = None
@@ -127,12 +160,12 @@ def fetch_emails_in_last_n_hours(
             human_readable_time = datetime.datetime.fromtimestamp(time.time() - n_hours * 60 * 60).strftime('%Y-%m-%d %H:%M:%S')
             print(f"Get emails between {human_readable_time} and {datetime.datetime.fromtimestamp(time.time())}")
             n_hours_ago_epoch = int(time.time()) - n_hours * 60 * 60
-            query = f' after:{n_hours_ago_epoch} ' + query
+            query = f' after:{n_hours_ago_epoch} ' + base_query
         elif isinstance(n_hours, tuple):
             end_hours, start_hours = n_hours
             start_hours_ago_epoch = int(time.time()) - start_hours * 60 * 60
             end_hours_ago_epoch = int(time.time()) - end_hours * 60 * 60
-            query = f'before:{end_hours_ago_epoch} after:{start_hours_ago_epoch} ' + query
+            query = f'before:{end_hours_ago_epoch} after:{start_hours_ago_epoch} ' + base_query
         else:
             raise ValueError("n_hours must be an integer or a tuple with two elements.")
 

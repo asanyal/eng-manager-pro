@@ -1,12 +1,14 @@
 from actions.actions import ActionInterface
 import streamlit as st
-from email_utils import fetch_emails_in_last_n_hours, BASE_QUERY
+from email_utils import fetch_emails_in_last_n_hours
 
 
 class GetEmails(ActionInterface):
     def __init__(
             self, 
     ):
+        
+
         if "email_summary" not in st.session_state:
             st.session_state.email_summary = None
 
@@ -23,16 +25,15 @@ class GetEmails(ActionInterface):
         with col3:
             st.write(" ")
             st.write(" ")
-            ai_generated = st.checkbox("AI", value=False)
-
+            personal = st.checkbox("Personal", value=False)
         full_width_container = st.container()
 
         with full_width_container:
             if emails_button:
+                
                 summary = fetch_emails_in_last_n_hours(
                     n_hours=int(hours), 
-                    query=BASE_QUERY, 
-                    ai_generated=ai_generated
+                    personal=personal
                 )
                 st.session_state.email_summary = summary if summary else "<span style='color: #0d7e03;'>No emails!</span>"
 

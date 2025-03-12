@@ -4,7 +4,7 @@ import streamlit as st
 from competitor_utils import get_competitive_analysis
 from shortcut_utils import ShortcutGateway
 from utils.common_utils import CODE_RED_DAYS_AFTER
-from datetime import timedelta
+from datetime import datetime
 import pandas as pd
 import altair as alt
 
@@ -153,7 +153,7 @@ class GetExecutionHealth(AbstractHealth):
         self.epic_id = epic_id
         self.title = title
 
-    def do_action(self, start, end):
+    def do_action(self, start: datetime, end: datetime):
         execution_health_btn = st.button(self.title)
 
         full_width_container = st.container()
