@@ -39,8 +39,8 @@ class ExplainAnObjective(ActionInterface):
             if explain_clicked:
                 results, display_string, _, _ = self.shortcut_gateway.explain_epics_from_objective(
                     objective_id,
-                    start_str,
-                    end_str,
+                    start,
+                    end,
                     CODE_RED_DAYS_AFTER,
                     verbose=True
                 )
@@ -70,6 +70,9 @@ class AnalyzeAPerson(ActionInterface):
             st.session_state.person_analysis_html = None
         if 'person_analysis_table' not in st.session_state:
             st.session_state.person_analysis_table = None
+        self.active_states = {'In Review', 'Merged to Main', 'In Development', 'Completed / In Prod'}
+        self.not_worked_on_states = {'Draft', 'Upcoming (Future Sprint)', 'Ready for Development (Current Sprint)'}
+        self.blocked_states = {'Eng Blocked'}
 
 
     def do_action(self, start, end):
@@ -83,8 +86,8 @@ class AnalyzeAPerson(ActionInterface):
             with full_width_container:
                 owner_id = self.shortcut_gateway.get_owner_id(owner)
                 stories = self.shortcut_gateway.get_stories_between_dates(
-                    datetime.strptime(start, "%d %b %Y").strftime('%Y-%m-%d'),
-                    datetime.strptime(end, "%d %b %Y").strftime('%Y-%m-%d')
+                    start.strftime('%Y-%m-%d'),
+                    end.strftime('%Y-%m-%d')
                 )
                 filtered_stories = [story for story in stories if len(story['owner_ids']) > 0 and story['owner_ids'][0] == owner_id]
 
@@ -96,7 +99,7 @@ class AnalyzeAPerson(ActionInterface):
 
                 for story in tqdm(filtered_stories):
                     total_owner_stories += 1
-                    is_complete = self.shortcut_gateway.get_workflow_name(story['workflow_state_id']) in active_states
+                    is_complete = self.shortcut_gateway.get_workflow_name(story['workflow_state_id']) in self.active_states
                     if is_complete:
                         completed_owner_stories += 1
                     is_complete_str = "<span style='color: #00FF00;'>Yes</span>" if is_complete else "<span style='color: #FF0000;'>No</span>"
@@ -147,7 +150,7 @@ class ExplainEpics(ActionInterface):
         if 'c2_map' not in st.session_state:
             st.session_state.c2_map = defaultdict(int)
 
-    def do_action(self, start, end):
+    def do_action(self, start: datetime, end: datetime):
         epic_ids = st.text_input("Comma separated Epic IDs e.g. 21023, 21024")
         explain_epic_clicked = st.button("Explain Epics", type="primary")
 

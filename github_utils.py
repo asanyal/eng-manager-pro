@@ -184,9 +184,9 @@ class GithubAPI:
         start_date, end_date = get_start_and_end_dates(last_n_hours)
 
         if end_date is None:
-            st.markdown(f"<h4>Events on {start_date}</h4>", unsafe_allow_html=True)
+            st.markdown(f"<h4>Github Events on {start_date}</h4>", unsafe_allow_html=True)
         else:
-            st.markdown(f"<h4>Events from {start_date} to {end_date}</h4>", unsafe_allow_html=True)
+            st.markdown(f"<h4>Github Events from {start_date} to {end_date}</h4>", unsafe_allow_html=True)
         repo_events_count = {}
 
         for i, repo in enumerate(self.all_repos):
@@ -326,7 +326,7 @@ class GithubAPI:
                 "created_at": datetime.strptime(item['created_at'][:10], '%Y-%m-%d'),
                 "state": item['state']
             })
-
+            print("PR appended: ", prs[-1])
         return prs
 
     def visualize_contributions(self, prs: list[dict], repo: str, n_days: int):
@@ -370,20 +370,31 @@ class GithubAPI:
         if len(prs) == 0:
             return
         html_table = "<table style='border-collapse: collapse; width: 100%;'>"
-        html_table += "<tr style='border: 1px solid black;'><th>Title</th><th>Author</th><th>Created On</th><th>State</th></tr>"
+        html_table += "<tr style='border: 1px solid black;'><th>Title</th><th>Author</th><th>Opened</th><th>State</th></tr>"
         open_prs = 0
         closed_prs = 0
         for pr in prs:
+            print("PR: ", pr)
             if isinstance(pr['created_at'], str):
-                pr['created_at'] = datetime.strptime(pr['created_at'], "%b %d")
+                pr['created_at'] = datetime.strptime(pr['created_at'], "%Y-%m-%d")
             elif isinstance(pr['created_at'], datetime):
-                pr['created_at'] = pr['created_at'].strftime("%b %d")
+                pr['created_at'] = pr['created_at'].strftime("%Y-%m-%d")
             if pr['state'] == "open":
                 open_prs += 1
             else:
                 closed_prs += 1
             state = f"<span style='color: green;'>{pr['state']}</span>" if pr['state'] == "open" else f"<span style='color: red;'>{pr['state']}</span>"
-            html_table += f"<tr style='border: 1px solid black;'><td><a href='{pr['url']}'>{pr['title']}</a></td><td>{pr['author']}</td><td>{pr['created_at']}</td><td>{state}</td></tr>"
+            # created_at is in the format "Mar 6" . Make it 
+            created_at = pr['created_at']
+            print("Created at: ", created_at)
+            pr_created_at_dt = None
+            if isinstance(created_at, str):
+                pr_created_at_dt = datetime.strptime(created_at, "%Y-%m-%d")
+            else:
+                pr_created_at_dt = created_at
+            # if the days are more than 1, use plural
+            opened_days_ago = f"{(datetime.now() - pr_created_at_dt).days} days ago" if (datetime.now() - pr_created_at_dt).days > 1 else f"today"
+            html_table += f"<tr style='border: 1px solid black;'><td><a href='{pr['url']}'>{pr['title']}</a></td><td>{pr['author']}</td><td>{opened_days_ago}</td><td>{state}</td></tr>"
         html_table += "</table>"
         st.markdown(f"Open PRs: <b>{open_prs}</b>, Closed PRs: <b>{closed_prs}</b>.", unsafe_allow_html=True)
         st.markdown(html_table, unsafe_allow_html=True)

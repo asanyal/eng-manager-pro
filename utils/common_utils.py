@@ -23,6 +23,7 @@ COMMON_PAGE_CSS = """
         flex-grow: 1;  /* Make tabs take equal space */
         text-align: center;
     }
+
     </style>
     """
 

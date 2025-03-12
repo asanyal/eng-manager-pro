@@ -1,7 +1,7 @@
 from actions.actions import ActionInterface
 import streamlit as st
 from github_utils import GithubAPI
-from llm_utils import CODE_REVIEW_INSTRUCTIONS, CODE_REVIEW_GUIDELINES
+from llm_utils import CODE_REVIEW_INSTRUCTIONS_V1, CODE_REVIEW_GUIDELINES_V1
 from llm_utils import ask_openai
 from datetime import datetime, timedelta
 
@@ -84,7 +84,7 @@ class GetSmartReviews(ActionInterface):
                         st.write(f"Path: <b><a href='{pr_url}/files'>{patch['path']}</a></b>, Additions: <b>{patch['additions']}</b>, Deletions: <b>{patch['deletions']}</b>", unsafe_allow_html=True)
                         html_content = "<table style='width: 50%;'><tr><th>Review</th></tr>"
                         smart_review = ask_openai(
-                            system_content="You are the smartest python programmer in the world.",
+                            system_content="You are an expert software engineer and architect specializing in Python backend services. Your task is to review the following Python pull request (PR) for a backend service and provide a structured, world-class review. The review should be comprehensive, covering best practices, scalability, potential race conditions, and memory management.",
                             user_content=f"""
                                 Below is a patch of code from a Github PR.
                                 + suggests additions.
@@ -95,10 +95,10 @@ class GetSmartReviews(ActionInterface):
                                 --end of patch--
 
                                 INSTRUCTIONS:
-                                {CODE_REVIEW_INSTRUCTIONS}
+                                {CODE_REVIEW_INSTRUCTIONS_V1}
 
                                 CODE REVIEW GUIDELINES:
-                                {CODE_REVIEW_GUIDELINES}
+                                {CODE_REVIEW_GUIDELINES_V1}
                         """)
                         html_content = f"""
                             <tr>
@@ -119,7 +119,7 @@ class GetSmartReviews(ActionInterface):
 
                 if refresh_latest_prs_button:
                     
-                    start_minus_2_days = (datetime.now() - timedelta(days=2))
+                    start_minus_2_days = (datetime.now() - timedelta(days=7))
                     end_today = datetime.now()
                     st.session_state.latest_prs = []
                     html_content = "<h3>PRs for your review</h3>"
@@ -128,8 +128,9 @@ class GetSmartReviews(ActionInterface):
                         prs = self.github_api.get_prs_for_repo(repo_name=repo, start=start_minus_2_days, end=end_today)
                         html_content += "<ul>"
                         for pr in prs[:5]:
-                            created_at = pr['created_at'].strftime("%d %b")
-                            html_content += f"<li>[<b>{created_at}</b>][<b>{pr['author']}</b>] <a href='{pr['url']}'>{pr['url']}</a></li>"
+                            days_open_since = (datetime.now() - pr['created_at']).days
+                            pr_open_or_closed = "<span style='color: green;'>open</span>" if pr['state'] == "open" else "<span style='color: red;'>closed</span>"
+                            html_content += f"<li>[<b>{days_open_since}</b> days]({pr_open_or_closed})[<b>{pr['author']}</b>] <a href='{pr['url']}'>{pr['title']}</a></li>"
                         html_content += "</ul>"
                     
                     st.session_state.latest_prs.append(html_content)

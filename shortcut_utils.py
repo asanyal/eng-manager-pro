@@ -175,10 +175,12 @@ class ShortcutGateway:
             date_map[current_date_str] = (len(stories_assigned_to_person), len(stories_completed_by_person))
         return date_map
 
-    def get_top_owners_for_epic(self, epic_id: int, start_date: str=None, end_date: str=None) -> List[str]:
+    def get_top_owners_for_epic(self, epic_id: int, start_date: datetime=None, end_date: datetime=None) -> List[str]:
         stories = self.get_stories_for_epic(epic_id)
         if start_date is not None and end_date is not None:
-            stories = [story for story in stories if datetime.strptime(story['created_at'], '%Y-%m-%dT%H:%M:%SZ') >= datetime.strptime(start_date, '%d %b %Y') and datetime.strptime(story['created_at'], '%Y-%m-%dT%H:%M:%SZ') <= datetime.strptime(end_date, '%d %b %Y')]
+            start_datetime = datetime.combine(start_date, datetime.min.time())
+            end_datetime = datetime.combine(end_date, datetime.max.time())
+            stories = [story for story in stories if start_datetime <= datetime.strptime(story['created_at'], '%Y-%m-%dT%H:%M:%SZ') <= end_datetime]
         completed_stories = [story for story in stories if story['completed']]
         incomplete_stories = [story for story in stories if not story['completed']]
         owners_of_completed_stories = [story['owner_ids'] for story in completed_stories]
@@ -356,8 +358,8 @@ class ShortcutGateway:
         tuples = []
         for i in range((end_date - start_date).days):
             current_date = start_date + timedelta(days=i)
-            s = (current_date - timedelta(days=14)).strftime('%d %b %Y')
-            e = current_date.strftime('%d %b %Y')
+            s = (current_date - timedelta(days=14))
+            e = current_date
             _,_,_,cum_days_filed,_,_,incomplete_count,_,_ = self.explain_epic(epic['id'], s, e)
             backlog_rate = 0
             if incomplete_count > 0:
@@ -368,16 +370,17 @@ class ShortcutGateway:
     def explain_epic(
             self, 
             epic_id: int, 
-            start_date: str, 
-            end_date: str=datetime.now().strftime('%Y-%m-%d'), 
+            start_date: datetime, 
+            end_date: datetime=datetime.now(), 
             code_red_days_after: int=10):
-        start_date = datetime.strptime(start_date, '%d %b %Y').strftime('%Y-%m-%d')
-        end_date = datetime.strptime(end_date, '%d %b %Y').strftime('%Y-%m-%d')
+
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        end_date_str = end_date.strftime('%Y-%m-%d')
 
         epic_name = self.get_epic_name(epic_id)
         stories = self.get_stories_for_epic(epic_id)
 
-        stories_in_date_range = [story for story in stories if datetime.strptime(story['created_at'], '%Y-%m-%dT%H:%M:%SZ') >= datetime.strptime(start_date, '%Y-%m-%d') and datetime.strptime(story['created_at'], '%Y-%m-%dT%H:%M:%SZ') <= datetime.strptime(end_date, '%Y-%m-%d')]
+        stories_in_date_range = [story for story in stories if datetime.strptime(story['created_at'], '%Y-%m-%dT%H:%M:%SZ') >= datetime.strptime(start_date_str, '%Y-%m-%d') and datetime.strptime(story['created_at'], '%Y-%m-%dT%H:%M:%SZ') <= datetime.strptime(end_date_str, '%Y-%m-%d')]
         total_stories_before_date = len(stories_in_date_range)
 
         if total_stories_before_date == 0:
@@ -445,8 +448,8 @@ class ShortcutGateway:
     def explain_epics_from_objective(
             self, 
             objective_id: int, 
-            start_date: str, 
-            end_date: str=datetime.now().strftime('%Y-%m-%d'), 
+            start_date: datetime, 
+            end_date: datetime=datetime.now(), 
             code_red_days_after: int=10, 
             verbose: bool=False
     ):
@@ -471,19 +474,17 @@ class ShortcutGateway:
         dates = [start + timedelta(days=i) for i in range((end - start).days)]
         tuples = []
         for date in dates:
-            start_date = date.strftime("%d %b %Y")
-            end_date = (date + timedelta(days=1)).strftime("%d %b %Y")
             insights, table, c1m, c2m = self.explain_epics(
                 epics=[epic], 
-                start_date=start_date,
-                end_date=end_date, 
+                start_date=date,
+                end_date=date + timedelta(days=1), 
                 code_red_days_after=CODE_RED_DAYS_AFTER, 
                 verbose=False,
                 show_progress_bar=False
             )
             total_tickets = sum(c1m.values())
             completed_tickets = sum(c2m.values())
-            tuples.append((start_date, total_tickets, completed_tickets))
+            tuples.append((date, total_tickets, completed_tickets))
 
         tuples.sort(key=lambda x: x[0], reverse=True)
         df = pd.DataFrame(tuples, columns=["Date", "Filed", "Completed"])
@@ -503,8 +504,8 @@ class ShortcutGateway:
     def explain_epics(
             self,
             epics: List[Dict[str, Any]],
-            start_date: str,
-            end_date: str=datetime.now().strftime('%Y-%m-%d'),
+            start_date: datetime,
+            end_date: datetime=datetime.now(),
             code_red_days_after: int=10,
             verbose: bool=False,
             show_progress_bar: bool=True
