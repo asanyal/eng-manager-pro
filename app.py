@@ -55,8 +55,8 @@ with activity_feed:
 with explain_an_objective:
     ExplainAnObjective(shortcut_gateway, sprint_utils, display_utils).do_action(start, end)
 with execution_health:
-    GetExecutionHealth(shortcut_gateway, 23489, "Customer Health").do_action(start, end)
-    GetExecutionHealth(shortcut_gateway, 23792, "G2.0 (M2) Health").do_action(start, end)
+    GetExecutionHealth(shortcut_gateway, 27274, "Customer Health").do_action(start, end)
+    GetExecutionHealth(shortcut_gateway, 25423, "G2.0 Product Quality").do_action(start, end)
 with analyze_a_person:
     AnalyzeAPerson(shortcut_gateway, sprint_utils, display_utils).do_action(start, end)
 with explain_epics:
