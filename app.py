@@ -39,8 +39,8 @@ with col2:
     end = st.date_input("End", value=datetime.now(), format="MM-DD-YYYY")
 
 tab_names = [
-    "My Day", "Emails", "GH Activity", "Smart Reviews", "GH Author Activity", "GH Repo Activity", "Execution Health", "Objectives", 
-    "Epics", "SH Author Activity", "Highlight", "Docs", "Competitors"
+    "My Day", "Emails", "GH Activity", "GH Author Activity", "SH Author Activity", "Smart Reviews", "GH Repo Activity", "Execution Health", "Objectives", 
+    "Epics", "Highlight", "Docs", "Company Profiling"
 ]
 
 my_day, get_emails, activity_feed, smart_reviews, author_prs, repo_prs, execution_health, explain_an_objective, explain_epics, analyze_a_person, highlighter, google_docs, competitors = st.tabs(tab_names)
