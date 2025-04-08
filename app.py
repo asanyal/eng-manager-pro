@@ -39,31 +39,31 @@ with col2:
     end = st.date_input("End", value=datetime.now(), format="MM-DD-YYYY")
 
 tab_names = [
-    "My Day", "Emails", "GH Activity", "GH Author Activity", "SH Author Activity", "Smart Reviews", "GH Repo Activity", "Execution Health", "Objectives", 
-    "Epics", "Highlight", "Docs", "Company Profiling"
+    "My Day", "Emails", "GH Activity", "Smart Reviews", "GH Author Activity", "GH Repo Activity", "Execution Health", "Objectives", 
+    "Epics", "SH Author Activity", "Highlight", "Docs", "Competitors"
 ]
 
-my_day, get_emails, activity_feed, smart_reviews, author_prs, repo_prs, execution_health, explain_an_objective, explain_epics, analyze_a_person, highlighter, google_docs, competitors = st.tabs(tab_names)
+my_day, get_emails, gh_activity, smart_reviews, gh_author_activity, gh_repo_activity, execution_health, objectives, epics, sh_author_activity, highlighter, google_docs, competitors = st.tabs(tab_names)
 
 
 with get_emails:
     GetEmails().do_action()
 with my_day:
     GetMyDay().do_action()
-with activity_feed:
+with gh_activity:
     GetGithubActivity().do_action()
-with explain_an_objective:
+with objectives:
     ExplainAnObjective(shortcut_gateway, sprint_utils, display_utils).do_action(start, end)
 with execution_health:
     GetExecutionHealth(shortcut_gateway, 27274, "Customer Health").do_action(start, end)
     GetExecutionHealth(shortcut_gateway, 25423, "G2.0 Product Quality").do_action(start, end)
-with analyze_a_person:
+with sh_author_activity:
     AnalyzeAPerson(shortcut_gateway, sprint_utils, display_utils).do_action(start, end)
-with explain_epics:
+with epics:
     ExplainEpics(shortcut_gateway, display_utils).do_action(start, end)
-with author_prs:
+with gh_author_activity:
     GetAuthorPRs().do_action(start, end)
-with repo_prs:
+with gh_repo_activity:
     GetRepoPRs().do_action(start, end)
 with highlighter:
     HighlightText().do_action()
