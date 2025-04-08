@@ -8,7 +8,6 @@ class GetEmails(ActionInterface):
             self, 
     ):
         
-
         if "email_summary" not in st.session_state:
             st.session_state.email_summary = None
 
