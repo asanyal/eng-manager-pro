@@ -3,6 +3,8 @@
 import datetime
 import streamlit as st
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
+import json
 
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -99,20 +101,28 @@ recruiter_emails = [
 
 def login(personal=False):
     creds = None
-
-    token_json = "gmail_token_personal.json" if personal else "gmail_token.json"
-    api_credentials_json = "gmail_api_credentials_personal.json" if personal else "gmail_api_credentials.json"
-
-    if os.path.exists(token_json):
-        creds = Credentials.from_authorized_user_file(token_json, SCOPES)
+    
+    # Load token from .env or streamlit secrets
+    token_env_var = "GMAIL_PERSONAL_TOKEN" if personal else "GMAIL_TOKEN"
+    token = os.getenv(token_env_var)
+    if token is None:
+        token = st.secrets[token_env_var]
+    
+    if token:
+        creds = Credentials.from_authorized_user_info(json.loads(token), SCOPES)
+    
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
+            api_credentials_json = "gmail_api_credentials_personal.json" if personal else "gmail_api_credentials.json"
             flow = InstalledAppFlow.from_client_secrets_file(api_credentials_json, SCOPES)
             creds = flow.run_local_server(port=0)
-        with open(token_json, "w") as token:
-            token.write(creds.to_json())
+        
+        # Save the new token to .env
+        with open(".env", "a") as env_file:
+            env_file.write(f"\n{token_env_var}='{creds.to_json()}'")
+    
     return creds
 
 
