@@ -110,6 +110,29 @@ Key Aspects to Evaluate:
 	•	Is the codebase structured for long-term maintainability and ease of extension?
 """
 
+THEME_EXTRACTION_PROMPT = """
+Given a list of story titles, identify 10-15 product-focused themes.
+
+INSTRUCTIONS:
+1. Extract the product features from the title (e.g., "Metrics Tables", "SSO & Auth", "Alerts", "Documentation" etc.)
+2. Ensure the themes are verbose and descriptive (but within 5-10 words)
+3. ONLY return a valid JSON array of theme names
+
+For guidance, here are some product areas in Galileo:
+Logstreams, Playground, Experiments, Projects, Metrics, Prompts, Datasets, Agentic Evaluation, Multi Modal Evaluation, Integrations, Admin, RBAC, etc, SSO, OAuth, SAML, Bugs and Feature Requests.
+
+RESPONSE FORMAT - ONLY return a JSON array like this:
+{
+    "themes": [
+        "Theme1",
+        "Theme2",
+        ...
+    ]
+}
+
+DO NOT include any explanations, text, or markdown before or after the JSON object.
+"""
+
 def ask_openai(
     user_content,
     system_content="You are a smart assistant", 
@@ -125,5 +148,26 @@ def ask_openai(
             {"role": "user", "content": user_content},
         ]
     )
-    output = response.choices[0].message.content.replace("```markdown", "").replace("```code", "").replace("```html", "").replace("```", "")
-    return output
+    # Clean the response: extract only the JSON object
+    output = response.choices[0].message.content
+    # Find the first { and last } to extract just the JSON object
+    start = output.find('{')
+    end = output.rfind('}') + 1
+    if start >= 0 and end > start:
+        output = output[start:end]
+    return output.strip()
+
+def classify_story(story_title: str, available_themes: list) -> str:
+    themes_list = "\n".join(f"- {theme}" for theme in available_themes)
+    prompt = f"""
+Given these themes:
+{themes_list}
+
+Classify this story into exactly ONE of the above themes:
+"{story_title}"
+
+Return ONLY the exact theme name from the list above. No explanations or additional text.
+"""
+    response = ask_openai(prompt)
+    theme = response.strip()
+    return theme if theme in available_themes else available_themes[0]  # fallback to first theme if no match

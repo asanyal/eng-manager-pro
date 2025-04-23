@@ -3,9 +3,17 @@ from firecrawl import FirecrawlApp
 import yfinance as yf
 from llm_utils import ask_openai
 import streamlit as st
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 def get_competitive_analysis(company_name, beautify=False):
-    app = FirecrawlApp(api_key='fc-429e9ff3ea344a99ad9a1c47039a6c13')
+    fc_key = os.getenv('FIRECRAWL_API_KEY')
+    if fc_key is None:
+        fc_key = st.secrets["FIRECRAWL_API_KEY"]
+
+    app = FirecrawlApp(api_key=fc_key)
 
     # Scrape a single URL
     url = ask_openai(

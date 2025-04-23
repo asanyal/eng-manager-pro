@@ -22,49 +22,56 @@ blocked_states = {'Eng Blocked'}
 
 class DisplayUtils:
 
-    def display_epics_results(self, display_string, results, code_red_days_after, start_date, end_date):
+    def display_epics_results(self, display_string, results, code_red_days_after, start_date, end_date, 
+                             in_week_completed=0, in_week_filed=0, out_week_completed=0, themes=None, completed_stories=None):
         st.markdown("<h3>Summary</h3>", unsafe_allow_html=True)
-        st.markdown(f"<div>Between <b>{start_date}</b> and <b>{end_date}</b> there were:</div>", unsafe_allow_html=True)
-        def html_display(label, value, postfix=""):
-            st.markdown(f"<li><b>{label}:</b> <span style='color: #FF69B4;'>{value}{postfix}</span></li>", unsafe_allow_html=True)
+        st.markdown(f"<div style='margin-bottom: 20px;'>Between <b>{start_date}</b> and <b>{end_date}</b> there were:</div>", unsafe_allow_html=True)
 
-        total_stories = results['num_stories']
-        completed = results['completed']
-        not_completed = results['not_completed']
-        num_stories_code_red = results['num_stories_code_red']
-        days_for_completion = results['days_for_completion_cumulative']
-        days_since_filed = results['days_since_filed_cumulative']
-        best_epic = results['best_epic']
-        worst_epic = results['worst_epic']
+        # Helper function for consistent metric display
+        def display_metric(label, value, suffix=""):
+            st.markdown(f"<div style='margin-left: 20px; margin-bottom: 10px;'>"
+                       f"• <b>{label}:</b> <span style='color: #FF69B4;'>{value}{suffix}</span>"
+                       f"</div>", unsafe_allow_html=True)
 
-        st.markdown("<ul>", unsafe_allow_html=True)
-        html_display("Tickets filed", total_stories)
-        if total_stories > 0:
-            html_display("Tickets Completed", f"{completed} ({completed / total_stories * 100:.2f}%)")
-        else:
-            html_display("No tickets completed", "")
-        if not_completed > 0:
-            html_display("Avg backlog (time ticket sits without being worked on)", f"{days_since_filed / not_completed:.2f}", " days")
-        else:
-            html_display("No backlog. All tickets completed", "")
+        # Display core metrics
+        display_metric("Within Period (Filed)", in_week_filed)
+        display_metric("Within Period (Completed)", in_week_completed)
+        display_metric("Outside Period (Completed)", out_week_completed)
 
-        if completed > 0:
-            html_display("Avg time to complete 1 ticket", f"{days_for_completion / completed:.2f}", " days")
-        else:
-            html_display("No tickets completed", "")
+        # Display average completion time if there are completed tickets
+        if results['completed'] > 0:
+            avg_completion_time = results['days_for_completion_cumulative'] / results['completed']
+            display_metric("Average completion time", f"{avg_completion_time:.2f}", " days")
 
+        # Display themes if they exist
+        if themes:
+            st.markdown("<div style='margin-left: 20px; margin-top: 20px;'><b>• Themes:</b></div>", unsafe_allow_html=True)
+            for theme in themes.keys():
+                st.markdown(f"<div style='margin-left: 40px; margin-bottom: 5px;'>"
+                           f"- {theme}"
+                           f"</div>", unsafe_allow_html=True)
+
+        if completed_stories:
+            # Add scrollable story list
+            story_list_html = """
+            <div style='margin-left: 40px; margin-top: 20px;'>
+                <h4>All Completed Stories</h4>
+                <div style='height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; border-radius: 4px; background-color: #f8f9fa;'>
+                    <ul style='margin: 0; padding-left: 20px;'>
+            """
+            
+            # Add each story as a simple list item
+            for story in completed_stories:
+                story_list_html += f"<li>{story}</li>"
+            
+            story_list_html += "</ul></div></div>"
+            st.markdown(story_list_html, unsafe_allow_html=True)
+
+        # Add separator before detailed information
+        st.markdown("<hr/>", unsafe_allow_html=True)
         
-
-        html_display("Not yet completed", not_completed)
-        html_display(f"Tickets that took over {code_red_days_after} days", num_stories_code_red)
-
-        html_display("Best epic", best_epic)
-        html_display("Worst epic", worst_epic)
-        
-        st.markdown("</ul><hr/>", unsafe_allow_html=True)
+        # Display detailed epic information
         st.markdown(display_string, unsafe_allow_html=True)
-        
-
 
     def display_single_epic_results(
         self,
@@ -93,11 +100,6 @@ class DisplayUtils:
             html_display("Avg time to complete 1 ticket", f"{cumulative_days_for_completion / completed_count:.2f}", " days")
         else:
             html_display("No tickets completed", "")
-
-        if not_yet_completed_count > 0:
-            html_display("Avg backlog (time ticket sits without being worked on)", f"{cumulative_days_since_filed / not_yet_completed_count:.2f}", " days")
-        else:
-            html_display("No backlog", "")
 
         display(HTML(display_string))
 
@@ -544,9 +546,30 @@ class ShortcutGateway:
         c1_map_epic_level = defaultdict(int)
         c2_map_epic_level = defaultdict(int)
 
-        for i, epic in tqdm(enumerate(epics)):
-            if show_progress_bar:
-                progress_bar_x.progress(i/len(epics))
+        in_week_completed = 0
+        in_week_filed = 0
+        out_week_completed = 0
+        completed_story_titles = []
+        
+        for epic in epics:
+            stories = self.get_stories_for_epic(epic['id'])
+            
+            for story in stories:
+                created_date = datetime.strptime(story['created_at'], "%Y-%m-%dT%H:%M:%SZ").date()
+                
+                if start_date <= created_date <= end_date:
+                    in_week_filed += 1
+                
+                if story['completed'] and story['completed_at']:
+                    completed_date = datetime.strptime(story['completed_at'], "%Y-%m-%dT%H:%M:%SZ").date()
+                    
+                    if start_date <= completed_date <= end_date:
+                        if start_date <= created_date <= end_date:
+                            in_week_completed += 1
+                            completed_story_titles.append(story['name'])
+                        elif created_date < start_date:
+                            out_week_completed += 1
+                            completed_story_titles.append(story['name'])
 
             first_story_date = self.get_first_story_date(epic['id'])
 
@@ -604,7 +627,7 @@ class ShortcutGateway:
         if verbose:
             epics_table += "</table>"
         
-        return epic_insights, epics_table, c1_map_epic_level, c2_map_epic_level
+        return epic_insights, epics_table, c1_map_epic_level, c2_map_epic_level, in_week_completed, in_week_filed, out_week_completed, completed_story_titles
 
 class SprintUtils:
     def __init__(self, shortcut_gateway: ShortcutGateway):

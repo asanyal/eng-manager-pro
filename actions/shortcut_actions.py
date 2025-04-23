@@ -5,6 +5,8 @@ from utils.common_utils import CODE_RED_DAYS_AFTER
 from datetime import datetime
 from tqdm import tqdm
 from collections import defaultdict
+import json
+from llm_utils import ask_openai, THEME_EXTRACTION_PROMPT, classify_story
 
 
 class ExplainAnObjective(ActionInterface):
@@ -157,63 +159,59 @@ class ExplainEpics(ActionInterface):
         full_width_container = st.container()
 
         with full_width_container:
-            
             if explain_epic_clicked and epic_ids is not None:
                 try:
-
                     epic_ids = [int(id) for id in epic_ids.split(",")]
-
                     epics = [self.shortcut_gateway.get_epic_from_id(epic_id) for epic_id in epic_ids]
 
-                    results, display_string, c1_map, c2_map = self.shortcut_gateway.explain_epics(
+                    results, display_string, c1_map, c2_map, in_week_completed, in_week_filed, out_week_completed, completed_stories = self.shortcut_gateway.explain_epics(
                         epics, 
                         start, 
                         end, 
                         CODE_RED_DAYS_AFTER, 
                         verbose=True
                     )
-                    st.session_state.epic_explanation_display = display_string
-                    st.session_state.epic_explanation_results = results
-                    st.session_state.c1_map = c1_map
-                    st.session_state.c2_map = c2_map
-                except ValueError:
-                    st.error("Invalid input.")
-            
-            if st.session_state.epic_explanation_display and st.session_state.epic_explanation_results:
-                self.display_utils.display_epics_results(
-                    st.session_state.epic_explanation_display, 
-                    st.session_state.epic_explanation_results, 
-                    CODE_RED_DAYS_AFTER, 
-                    start, 
-                    end
-                )
-            if st.session_state.c1_map and st.session_state.c2_map:
-                completed_stories = sum(st.session_state.c2_map.values())
-                total_stories = sum(st.session_state.c1_map.values())
-                customer_labels = list(st.session_state.c1_map.keys())
-
-                if len(customer_labels) == 1 and customer_labels[0] == None:
-                    pass
-                else:
-                    st.markdown(f"<h3>Labels</h3>", unsafe_allow_html=True)
-
-                    # ignore the None key
-                    c1_map_without_none = {k: v for k, v in st.session_state.c1_map.items() if k is not None}
-                    c2_map_without_none = {k: v for k, v in st.session_state.c2_map.items() if k is not None}
-
-                    completed_stories = sum(c2_map_without_none.values())
-                    total_stories = sum(c1_map_without_none.values())
-
-                    completion_rate = completed_stories / total_stories * 100
-
-                    st.markdown(f"Completed <b>{completed_stories}</b> out of <b>{total_stories}</b> labeled tickets between <b>{start}</b> and <b>{end}</b>. That's a <u>completion rate of <b>{completion_rate:.2f}%</b></u>.", unsafe_allow_html=True)
-
-                    completed_column, total_column = st.columns([1, 1])
-                    with completed_column:
-                        st.markdown(f"<b>Dates</b>: {start} - {end}", unsafe_allow_html=True)
-                        st.markdown(f"<span> Total Tickets: {sum(st.session_state.c2_map.values())}</span>", unsafe_allow_html=True)
-                        st.bar_chart(st.session_state.c2_map, color="#00FF00", height=300)
-                    with total_column:
-                        st.markdown(f"<b>Total tickets between {start} and {end}</b>", unsafe_allow_html=True)
-                        st.markdown(f"<span> Total Tickets: {sum(st.session_state.c1_map.values())}</span>", unsafe_allow_html=True)
-                        st.bar_chart(st.session_state.c1_map, color="#9c0000", height=300)
+                    print("Type of completed_stories:", type(completed_stories))  # Debug print
+                    if completed_stories:
+                        print("Type of first completed story:", type(completed_stories[0]))  # Debug print
+                    
+                    # Get themes from OpenAI
+                    themes = {}
+                    if completed_stories:
+                        print("COMPLETED STORIES", len(completed_stories))
+                        print("First completed story:", completed_stories[0])
+                        # Since completed_stories is already a list of story names, we can join them directly
+                        stories_text = "\n".join(completed_stories)  # Remove the ['name'] access
+                        prompt = f"{THEME_EXTRACTION_PROMPT}\n\nStory titles:\n{stories_text}"
+                        try:
+                            themes_response = ask_openai(prompt)
+                            print("Raw OpenAI response:", themes_response)
+                            cleaned_response = themes_response.strip()
+                            print("Cleaned response:", cleaned_response)
+                            response_json = json.loads(cleaned_response)
+                            print("Parsed JSON:", response_json)
+                            themes = {theme: 0 for theme in response_json['themes']}
+                            
+                        except json.JSONDecodeError as e:
+                            st.error(f"Error parsing themes JSON. Raw response: {themes_response}")
+                        except Exception as e:
+                            st.error(f"Error processing themes: {str(e)}")
+                            print("Exception occurred at:", e.__traceback__.tb_lineno)
+                    
+                    self.display_utils.display_epics_results(
+                        display_string, 
+                        results, 
+                        CODE_RED_DAYS_AFTER, 
+                        start, 
+                        end,
+                        in_week_completed,
+                        in_week_filed,
+                        out_week_completed,
+                        themes,
+                        completed_stories  # Just pass the completed stories directly
+                    )
+                    
+                except ValueError as e:
+                    st.error(f"Invalid input. Error: {str(e)}")
+                except Exception as e:
+                    st.error(f"Unexpected error: {str(e)}")
