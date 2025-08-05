@@ -7,7 +7,12 @@ from collections import defaultdict, Counter
 import streamlit as st
 import pandas as pd
 from datetime import timedelta
+import os
+from dotenv import load_dotenv
 from utils.common_utils import CODE_RED_DAYS_AFTER
+
+# Load environment variables
+load_dotenv()
 
 PRODUCT_ROADMAP_OBJECTIVE = "Product Roadmap (2025)"
 CUSTOMER_ISSUES_EPIC = "Customer Tickets: 2025H1"
@@ -106,7 +111,9 @@ class DisplayUtils:
 class ShortcutGateway:
     def __init__(self):
         self._base_url = 'https://api.app.shortcut.com/api'
-        self._token = 'c8bcc9eb-0588-439b-9d35-3f8a75d3deee'
+        self._token = os.getenv('SHORTCUT_API_TOKEN')
+        if not self._token:
+            raise ValueError("SHORTCUT_API_TOKEN environment variable is not set. Please check your .env file.")
         # self.headers = {
         #     "Authorization": f"Bearer {self._token}",
         #     "Content-Type": "application/json",
